@@ -34,6 +34,8 @@
     </div>
 
     <script>
+        console.log('hello world')
+        // Initialize barcode detection 
         let barcodeDetectorAPI;
         let zxing_barcode_reader;
         let xzing_barcode_reader_hints;
@@ -69,15 +71,10 @@
                 return false;
             }
 
-            try {
-                return new BarcodeDetector({
+            return new BarcodeDetector({
                     formats: ['qr_code', 'code_128']
                 });
-            } catch (e) {
-                console.error('Barcode Detection API error:', e);
-                return null;
-            }
-        }
+        }   
 
         function showPopup(barcodeValue) {
             const popup = document.getElementById('barcodePopup');
