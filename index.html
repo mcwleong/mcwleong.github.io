@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -25,7 +24,7 @@
     </style>
 </head>
 <body>
-    <video id="webcam" style="display: none;" autoplay playsinline></video>
+    <video id="webcam" style="display: none;" autoplay playsinline muted></video>
     <canvas id="croppedCanvas" style="display: none;"></canvas>
     <canvas id="processedCanvas"></canvas>
     <div id="barcodePopup" class="popup">
@@ -275,62 +274,71 @@
                 const videoElement = document.getElementById('webcam');
                 videoElement.srcObject = stream;
                 
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play().then(resolve);
+                    };
+                });
+                
                 // Create temporary canvas once, outside the loop
                 const tempCanvas = document.createElement('canvas');
-                const tempContext = tempCanvas.getContext('2d');
+                const tempContext = tempCanvas.getContext('2d', { willReadFrequently: true });
                 
-                // Initialize barcode detector
+                const processedCanvas = document.getElementById('processedCanvas');
+                const processedContext = processedCanvas.getContext('2d', { willReadFrequently: true });
                 
-                setInterval(() => {
-                    const processedCanvas = document.getElementById('processedCanvas');
-                    processedCanvas.width = videoElement.videoWidth;
-                    processedCanvas.height = videoElement.videoHeight;
-                    const processedContext = processedCanvas.getContext('2d');
-                    processedContext.drawImage(videoElement, 0, 0, processedCanvas.width, processedCanvas.height);
+                // Use requestAnimationFrame instead of setInterval
+                function processFrame() {
+                    if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                        processedCanvas.width = videoElement.videoWidth;
+                        processedCanvas.height = videoElement.videoHeight;
+                        
+                        processedContext.drawImage(videoElement, 0, 0, processedCanvas.width, processedCanvas.height);
 
-                    // Calculate center crop dimensions (50% width, height is 3/5 of width)
-                    const cropWidth = processedCanvas.width * 0.5;
-                    const cropHeight = cropWidth;
-                    const cropX = (processedCanvas.width - cropWidth) / 2;
-                    const cropY = (processedCanvas.height - cropHeight) / 2;
+                        // Calculate center crop dimensions
+                        const cropWidth = processedCanvas.width * 0.5;
+                        const cropHeight = cropWidth;
+                        const cropX = (processedCanvas.width - cropWidth) / 2;
+                        const cropY = (processedCanvas.height - cropHeight) / 2;
 
-                    // Update temporary canvas dimensions if needed
-                    tempCanvas.width = cropWidth;
-                    tempCanvas.height = cropHeight;
+                        // Update temporary canvas dimensions if needed
+                        tempCanvas.width = cropWidth;
+                        tempCanvas.height = cropHeight;
 
-                    // Draw cropped region to temporary canvas
-                    tempContext.drawImage(
-                        videoElement,
-                        cropX, cropY, cropWidth, cropHeight,  // Source coordinates
-                        0, 0, cropWidth, cropHeight          // Destination coordinates
-                    );
-                    if (barcodeDetectorAPI) {
-                        console.log('Using Shape Detection API');
-                        detectBarcodesWithShapeDetectionAPI(tempCanvas);
-                    } else {
-                        console.log('Using native barcode detection');
-                        detectBarcodeNative(tempCanvas);
-                        detectQRCodeNative(tempCanvas);
+                        // Draw cropped region to temporary canvas
+                        tempContext.drawImage(
+                            videoElement,
+                            cropX, cropY, cropWidth, cropHeight,
+                            0, 0, cropWidth, cropHeight
+                        );
+
+                        if (barcodeDetectorAPI) {
+                            console.log('Using Shape Detection API');
+                            detectBarcodesWithShapeDetectionAPI(tempCanvas);
+                        } else {
+                            console.log('Using native barcode detection');
+                            detectBarcodeNative(tempCanvas);
+                            detectQRCodeNative(tempCanvas);
+                        }
+
+                        // Draw red borders on the processed canvas
+                        processedContext.strokeStyle = '#FF0000';
+                        processedContext.lineWidth = 5;
+                        processedContext.strokeRect(cropX, cropY, cropWidth, cropHeight);
+                        
+                        // Draw a blue horizontal line in the middle of the canvas
+                        processedContext.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+                        processedContext.beginPath();
+                        processedContext.moveTo(cropX, processedCanvas.height/2);
+                        processedContext.lineTo(cropX+cropWidth, processedCanvas.height/2);
+                        processedContext.stroke();
                     }
-
-                    // // Draw the temporary canvas back onto the processed canvas
-                    // processedContext.drawImage(
-                    //     tempCanvas,
-                    //     cropX, cropY, cropWidth, cropHeight  // Draw at the same crop location
-                    // );
-
-                    // Draw red borders on the processed canvas
-                    processedContext.strokeStyle = '#FF0000';
-                    processedContext.lineWidth = 5;
-                    processedContext.strokeRect(cropX, cropY, cropWidth, cropHeight);
-                    // Draw a blue horizontal line in the middle of the canvas with 50% opacity
-                    processedContext.strokeStyle = 'rgba(0, 0, 255, 0.5)';
-                    processedContext.beginPath();
-                    processedContext.moveTo(cropX, processedCanvas.height/2);
-                    processedContext.lineTo(cropX+cropWidth, processedCanvas.height/2);
-                    processedContext.stroke();
-
-                }, 33);
+                    
+                    requestAnimationFrame(processFrame);
+                }
+                
+                requestAnimationFrame(processFrame);
             
             } catch (err) {
                 console.error("Error accessing webcam:", err);
@@ -340,8 +348,14 @@
         
         // Initialize barcode detection
         async function initializeDetection() {
-            const detector = await initBarcodeDetector();
-            
+            let detector;
+            try {
+                detector = await initBarcodeDetector();
+            } catch (err) {
+                console.error('Error initializing Barcode Detection API:', err);
+                console.log('Barcode Detection API not supported, using ZXing');
+                detector = false;
+            }
             // Initialize ZXing readers and hints
             const [barcode_reader, barcode_hints, qrcode_reader, qrcode_hints] = await Promise.all([
                 init_zxing_barcode_reader(),
@@ -357,9 +371,7 @@
             zxing_qrcode_reader = qrcode_reader;
             xzing_qrcode_reader_hints = qrcode_hints;
 
-            if (!barcodeDetectorAPI) {
-                console.log('Barcode Detection API not supported, using ZXing');
-            }
+    
         }
 
         initializeDetection().then(() => {
