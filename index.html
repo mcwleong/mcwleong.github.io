@@ -104,6 +104,55 @@
 
         async function detectBarcodeNative(canvas) {
             
+            
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, width, height).data;
+            
+            // Convert to grayscale
+            const grayscale = new Array(width * height);
+
+            for (let i = 0; i < imageData.length; i += 4) {
+                const value = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
+                grayscale[i/4] = value;
+            }
+
+            const grayscaleImageData = new ImageData(width, height);
+
+            for (let i = 0; i < grayscale.length; i++) {
+                const idx = i * 4;
+                grayscaleImageData.data[idx] = grayscale[i];     // R
+                grayscaleImageData.data[idx+1] = grayscale[i];   // G
+                grayscaleImageData.data[idx+2] = grayscale[i];   // B
+                grayscaleImageData.data[idx+3] = 255;        // A
+            }
+
+            ctx.putImageData(grayscaleImageData, 0, 0);
+            
+            // Get 8 evenly distributed lines across the height
+            const numLines = 8;
+            const heightStep = Math.floor(grayscaleImageData.height / (numLines + 1));
+            
+            for (let line = 1; line <= numLines; line++) {
+                const y = line * heightStep;
+                const rowData = grayscaleImageData.data.slice(y * grayscaleImageData.width * 4, (y + 1) * grayscaleImageData.width * 4);
+                
+                // convert to raw array
+                let raw_barcode_line = Array(grayscaleImageData.width);
+                for (let x = 0; x < grayscaleImageData.width; x++) {
+                    const sourceIdx = x * 4;
+                    raw_barcode_line[x] = rowData[sourceIdx];
+                }
+
+                detectOnce(raw_barcode_line);
+            }
+
+        }
+
+        function detectOnce(raw_barcode_line) {
+            
             // Function to apply 1D Gaussian blur to an array of data
             // dataArray: Array of values to blur
             // sigma: Standard deviation of Gaussian kernel (default 1.0)
@@ -139,43 +188,6 @@
                     dataArray[i] = value;
                 }
             }
-
-
-            const width = canvas.width;
-            const height = canvas.height;
-            const ctx = canvas.getContext('2d');
-            const imageData = ctx.getImageData(0, 0, width, height).data;
-            
-            // Convert to grayscale
-            const grayscale = new Array(width * height);
-
-            for (let i = 0; i < imageData.length; i += 4) {
-                const value = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
-                grayscale[i/4] = value;
-            }
-
-            const grayscaleImageData = new ImageData(width, height);
-
-            for (let i = 0; i < grayscale.length; i++) {
-                const idx = i * 4;
-                grayscaleImageData.data[idx] = grayscale[i];     // R
-                grayscaleImageData.data[idx+1] = grayscale[i];   // G
-                grayscaleImageData.data[idx+2] = grayscale[i];   // B
-                grayscaleImageData.data[idx+3] = 255;        // A
-            }
-
-            ctx.putImageData(grayscaleImageData, 0, 0);
-            //detectBarcodeNative(canvas);
-            const middleY = Math.floor(grayscaleImageData.height / 2);
-            const middleRowData = grayscaleImageData.data.slice(middleY * grayscaleImageData.width * 4, (middleY + 1) * grayscaleImageData.width * 4);
-            
-            // convert to raw array
-            let raw_barcode_line = Array(grayscaleImageData.width);
-            for (let x = 0; x < grayscaleImageData.width; x++) {
-                const sourceIdx = x * 4;
-                raw_barcode_line[x] = middleRowData[sourceIdx];
-            }
-
             // Apply Gaussian blur
             gaussianBlur_1d(raw_barcode_line, 1.0);
             
