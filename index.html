@@ -131,8 +131,8 @@
 
             ctx.putImageData(grayscaleImageData, 0, 0);
             
-            // Get 8 evenly distributed lines across the height
-            const numLines = 8;
+            // Get 16 evenly distributed lines across the height
+            const numLines = 16;
             const heightStep = Math.floor(grayscaleImageData.height / (numLines + 1));
             
             for (let line = 1; line <= numLines; line++) {
