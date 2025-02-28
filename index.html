@@ -26,7 +26,7 @@
 <body>
     <video id="webcam" style="display: none;" autoplay playsinline muted></video>
     <canvas id="croppedCanvas" style="display: none;"></canvas>
-    <canvas id="processedCanvas"></canvas>
+    <canvas id="processedCanvas" style="width: 100vw; height: 100vh; object-fit: contain; background: black;"></canvas>
     <div id="barcodePopup" class="popup">
         <h3>Barcode Detected</h3>
         <p id="barcodeValue"></p>
@@ -49,6 +49,7 @@
 
         async function init_zxing_barcode_reader_hints() {
             const hints = new Map();
+            hints.set(ZXing.DecodeHintType.PURE_BARCODE, 1);
             hints.set(ZXing.DecodeHintType.TRY_HARDER, 1);
             return hints;
         }
@@ -152,44 +153,7 @@
         }
 
         function detectOnce(raw_barcode_line) {
-            
-            // Function to apply 1D Gaussian blur to an array of data
-            // dataArray: Array of values to blur
-            // sigma: Standard deviation of Gaussian kernel (default 1.0)
-            function gaussianBlur_1d(dataArray, sigma = 1.0) {
-                // Calculate kernel size based on sigma (3 standard deviations)
-                const kernelSize = Math.ceil(sigma * 6);
-                const halfSize = Math.floor(kernelSize / 2);
-
-                // Create Gaussian kernel
-                const kernel = new Array(kernelSize);
-                const scale = 1 / (Math.sqrt(2 * Math.PI) * sigma);
-                let sum = 0;
-
-                for (let i = 0; i < kernelSize; i++) {
-                    const x = i - halfSize;
-                    kernel[i] = scale * Math.exp(-(x * x) / (2 * sigma * sigma));
-                    sum += kernel[i];
-                }
-
-                // Normalize kernel
-                for (let i = 0; i < kernelSize; i++) {
-                    kernel[i] /= sum;
-                }
-
-                // Apply convolution in-place
-                const temp = [...dataArray]; // Create temporary copy
-                for (let i = 0; i < dataArray.length; i++) {
-                    let value = 0;
-                    for (let k = 0; k < kernelSize; k++) {
-                        const idx = Math.min(Math.max(i + k - halfSize, 0), dataArray.length - 1);
-                        value += temp[idx] * kernel[k];
-                    }
-                    dataArray[i] = value;
-                }
-            }
-            // Apply Gaussian blur
-            gaussianBlur_1d(raw_barcode_line, 1.0);
+            // less is more. using gaussian blue hampers detection
             
             // Find min and max values in the raw barcode line
             let min = raw_barcode_line[0];
@@ -274,8 +238,7 @@
             try {
                 const constraints = {
                     video: {
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
+                        height: { ideal: 720 },  // 720p height while maintaining native aspect ratio
                         facingMode: "environment"
                     }
                 };
@@ -306,7 +269,7 @@
                         processedContext.drawImage(videoElement, 0, 0, processedCanvas.width, processedCanvas.height);
 
                         // Calculate center crop dimensions
-                        const cropWidth = processedCanvas.width * 0.5;
+                        const cropWidth = Math.min(processedCanvas.width, processedCanvas.height) * 0.4;
                         const cropHeight = cropWidth;
                         const cropX = (processedCanvas.width - cropWidth) / 2;
                         const cropY = (processedCanvas.height - cropHeight) / 2;
@@ -321,7 +284,7 @@
                             cropX, cropY, cropWidth, cropHeight,
                             0, 0, cropWidth, cropHeight
                         );
-
+                        //barcodeDetectorAPI = false;
                         if (barcodeDetectorAPI) {
                             console.log('Using Shape Detection API');
                             detectBarcodesWithShapeDetectionAPI(tempCanvas);
@@ -332,16 +295,10 @@
                         }
 
                         // Draw red borders on the processed canvas
-                        processedContext.strokeStyle = '#FF0000';
+                        barcodeDetectorAPI? processedContext.strokeStyle = '#FF0000' : processedContext.strokeStyle = '#0000FF';
                         processedContext.lineWidth = 5;
                         processedContext.strokeRect(cropX, cropY, cropWidth, cropHeight);
-                        
-                        // Draw a blue horizontal line in the middle of the canvas
-                        processedContext.strokeStyle = 'rgba(0, 0, 255, 0.5)';
-                        processedContext.beginPath();
-                        processedContext.moveTo(cropX, processedCanvas.height/2);
-                        processedContext.lineTo(cropX+cropWidth, processedCanvas.height/2);
-                        processedContext.stroke();
+
                     }
                     
                     requestAnimationFrame(processFrame);
