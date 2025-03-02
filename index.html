@@ -42,6 +42,9 @@
         let zxing_qrcode_reader;
         let xzing_qrcode_reader_hints;
 
+        let detected_api = false;
+        let detected_zxing = false; 
+
         async function init_zxing_barcode_reader() {
             const codeReader = new ZXing.Code128Reader();
             return codeReader;
@@ -96,17 +99,17 @@
                 const barcodes = await barcodeDetectorAPI.detect(videoElement);
                 if (barcodes.length > 0) {
                     // Show the first detected barcode or qrcode
-                    showPopup(barcodes[0].rawValue);
+                    //showPopup(barcodes[0].rawValue);
+                    detected_api = true;
                 }
+                else detected_api = false;
             } catch (e) {
                 console.error('Barcode detection error:', e);
             }
         }
 
-        async function detectBarcodeNative(canvas) {
+        function detectBarcodeNative(canvas) {
             
-            
-
             const width = canvas.width;
             const height = canvas.height;
             const ctx = canvas.getContext('2d');
@@ -147,9 +150,12 @@
                     raw_barcode_line[x] = rowData[sourceIdx];
                 }
 
-                detectOnce(raw_barcode_line);
+                if (detectOnce(raw_barcode_line)) {
+                    detected_zxing = true;
+                    return;
+                }
+                else detected_zxing = false;
             }
-
         }
 
         function detectOnce(raw_barcode_line) {
@@ -200,15 +206,19 @@
                 const result = zxing_barcode_reader.decode(binaryBitmap, xzing_barcode_reader_hints);
                 if (result && result.text) {
                     console.debug('ZXing decode succeeded:', result.text);
-                    showPopup(result.text);
+                    //showPopup(result.text);
+                    detected_zxing = true;
+                    return true;
                 }
             } catch (error) {
                 console.debug('ZXing decode failed:', error);
+                detected_zxing = false;
+                return false;
             }
 
         } 
 
-        async function detectQRCodeNative(canvas) {
+        function detectQRCodeNative(canvas) {
             try {
                 // Get image data from canvas
                 const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
@@ -228,10 +238,11 @@
                 const result = zxing_qrcode_reader.decode(binaryBitmap, xzing_qrcode_reader_hints);
                 if (result && result.text) {
                     console.debug('ZXing QR decode succeeded:', result.text);
-                    showPopup(result.text);
+                    //showPopup(result.text);
                 }
             } catch (error) {
                 console.debug('ZXing QR decode failed:', error);
+                return false;
             }
         }
         async function startWebcam() {
@@ -284,15 +295,22 @@
                             cropX, cropY, cropWidth, cropHeight,
                             0, 0, cropWidth, cropHeight
                         );
-                        //barcodeDetectorAPI = false;
+                        
                         if (barcodeDetectorAPI) {
                             console.log('Using Shape Detection API');
                             detectBarcodesWithShapeDetectionAPI(tempCanvas);
-                        } else {
-                            console.log('Using native barcode detection');
-                            detectBarcodeNative(tempCanvas);
-                            detectQRCodeNative(tempCanvas);
-                        }
+                        } 
+                        console.log('Using native barcode detection');
+                        detectBarcodeNative(tempCanvas);
+                        //detectQRCodeNative(tempCanvas);
+                    
+
+                        // Draw detection results in top left corner
+                        processedContext.font = '20px Arial';
+                        processedContext.fillStyle = detected_api ? '#00FF00' : '#FF0000';
+                        processedContext.fillText(`API Detection: ${detected_api}`, 10, 30);
+                        processedContext.fillStyle = detected_zxing ? '#00FF00' : '#FF0000';
+                        processedContext.fillText(`ZXing Detection: ${detected_zxing}`, 10, 60);
 
                         // Draw red borders on the processed canvas
                         barcodeDetectorAPI? processedContext.strokeStyle = '#FF0000' : processedContext.strokeStyle = '#0000FF';
