@@ -159,8 +159,53 @@
         }
 
         function detectOnce(raw_barcode_line) {
-            // less is more. using gaussian blue hampers detection
             
+            // global thresholding is better then adaptive thresholding - I've tried both
+            // I've also tried using a gaussian blur to smooth the image, but it hampers detection
+
+
+            // Perform unsharp mask to enhance edges
+            // First create a blurred version using gaussian blur
+            const sigma = 1.0;
+            const kernelSize = 5;
+            const blurred = new Array(raw_barcode_line.length);
+            
+            // Generate gaussian kernel
+            const kernel = new Array(kernelSize);
+            const center = Math.floor(kernelSize/2);
+            let sum = 0;
+            for (let i = 0; i < kernelSize; i++) {
+                const x = i - center;
+                kernel[i] = Math.exp(-(x*x)/(2*sigma*sigma));
+                sum += kernel[i];
+            }
+            // Normalize kernel
+            for (let i = 0; i < kernelSize; i++) {
+                kernel[i] /= sum;
+            }
+            
+            // Apply gaussian blur
+            for (let i = 0; i < raw_barcode_line.length; i++) {
+                let val = 0;
+                let weightSum = 0;
+                for (let k = 0; k < kernelSize; k++) {
+                    const idx = i + (k - center);
+                    if (idx >= 0 && idx < raw_barcode_line.length) {
+                        val += raw_barcode_line[idx] * kernel[k];
+                        weightSum += kernel[k];
+                    }
+                }
+                blurred[i] = val / weightSum;
+            }
+            
+            // Apply unsharp mask: original + amount * (original - blurred)
+            const amount = 1.5;  // Strength of the sharpening effect
+            for (let i = 0; i < raw_barcode_line.length; i++) {
+                raw_barcode_line[i] = Math.min(255, Math.max(0,
+                    raw_barcode_line[i] + amount * (raw_barcode_line[i] - blurred[i])
+                ));
+            }
+
             // Find min and max values in the raw barcode line
             let min = raw_barcode_line[0];
             let max = raw_barcode_line[0];
