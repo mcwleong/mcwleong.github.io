@@ -108,55 +108,68 @@
             }
         }
 
-        function detectBarcodeNative(canvas) {
-            
+
+        function processCodesNative(canvas){
+            detected_zxing = false; // reset zxing barcode detection flag
+
             const width = canvas.width;
             const height = canvas.height;
             const ctx = canvas.getContext('2d');
             const imageData = ctx.getImageData(0, 0, width, height).data;
             
             // Convert to grayscale
-            const grayscale = new Array(width * height);
+            const grayscale = new Uint8ClampedArray(width * height);
 
             for (let i = 0; i < imageData.length; i += 4) {
                 const value = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
                 grayscale[i/4] = value;
             }
 
-            const grayscaleImageData = new ImageData(width, height);
+            const BARCODE_SCANNING_LINES = 24
+            processBarcodeNative(grayscale, width, height, BARCODE_SCANNING_LINES);
+            processQRCodeNative(grayscale, width, height);
 
-            for (let i = 0; i < grayscale.length; i++) {
-                const idx = i * 4;
-                grayscaleImageData.data[idx] = grayscale[i];     // R
-                grayscaleImageData.data[idx+1] = grayscale[i];   // G
-                grayscaleImageData.data[idx+2] = grayscale[i];   // B
-                grayscaleImageData.data[idx+3] = 255;        // A
-            }
+        }
 
-            ctx.putImageData(grayscaleImageData, 0, 0);
-            
+        function processBarcodeNative(grayscale, width, height, numLines){
             // Get 16 evenly distributed lines across the height
-            const numLines = 16;
-            const heightStep = Math.floor(grayscaleImageData.height / (numLines + 1));
-            
-            for (let line = 1; line <= numLines; line++) {
-                const y = line * heightStep;
-                const rowData = grayscaleImageData.data.slice(y * grayscaleImageData.width * 4, (y + 1) * grayscaleImageData.width * 4);
-                
-                // convert to raw array
-                let raw_barcode_line = Array(grayscaleImageData.width);
-                for (let x = 0; x < grayscaleImageData.width; x++) {
-                    const sourceIdx = x * 4;
-                    raw_barcode_line[x] = rowData[sourceIdx];
-                }
+            //console.log("length", grayscale.length);
+            //console.log("width", width);
+            //console.log("height", height);
 
-                if (detectOnce(raw_barcode_line)) {
+            const heightStep = Math.floor(height/ (numLines-1));
+            //console.log("heightStep", heightStep);
+            for (let line = 0; line < numLines; line++) {
+                //console.log("line", line);
+                const startIdx = (line * heightStep) * width;
+                const endIdx = startIdx + width;
+                const rowData = new Uint8ClampedArray(grayscale.subarray(startIdx, endIdx));
+                //console.log("rowData", rowData.length, "start:", startIdx, "end:", endIdx);
+
+                if (detectOnce(rowData)) {
                     detected_zxing = true;
-                    return;
+                    return; // barcode detected. stop processing
                 }
-                else detected_zxing = false;
             }
         }
+
+        function processQRCodeNative(grayscale, width, height){
+            try{
+                const luminanceData = grayscale;
+                const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, width, height);
+                const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
+                const result = zxing_qrcode_reader.decode(binaryBitmap, xzing_qrcode_reader_hints);
+                if (result && result.text) {
+                    console.debug('ZXing QR decode succeeded:', result.text);
+                    //showPopup(result.text);
+                    detected_zxing = true;
+                }
+            }catch(error){
+                //console.debug('ZXing QR decode failed:', error);
+            }
+        }
+
+
 
         function detectOnce(raw_barcode_line) {
             
@@ -166,24 +179,11 @@
 
             // Perform unsharp mask to enhance edges
             // First create a blurred version using gaussian blur
-            const sigma = 1.0;
+            // Pre-computed gaussian kernel for sigma=1.0 and size=5
+            const kernel = [0.0545, 0.2442, 0.4026, 0.2442, 0.0545];
             const kernelSize = 5;
+            const center = 2;  // Math.floor(kernelSize/2)
             const blurred = new Array(raw_barcode_line.length);
-            
-            // Generate gaussian kernel
-            const kernel = new Array(kernelSize);
-            const center = Math.floor(kernelSize/2);
-            let sum = 0;
-            for (let i = 0; i < kernelSize; i++) {
-                const x = i - center;
-                kernel[i] = Math.exp(-(x*x)/(2*sigma*sigma));
-                sum += kernel[i];
-            }
-            // Normalize kernel
-            for (let i = 0; i < kernelSize; i++) {
-                kernel[i] /= sum;
-            }
-            
             // Apply gaussian blur
             for (let i = 0; i < raw_barcode_line.length; i++) {
                 let val = 0;
@@ -256,40 +256,15 @@
                     return true;
                 }
             } catch (error) {
-                console.debug('ZXing decode failed:', error);
+                //console.debug('ZXing decode failed:', error);
                 detected_zxing = false;
                 return false;
             }
 
         } 
 
-        function detectQRCodeNative(canvas) {
-            try {
-                // Get image data from canvas
-                const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-                
-                // Create luminance data array
-                const luminanceData = new Uint8ClampedArray(imageData.width * imageData.height);
-                
-                // Convert RGBA to grayscale luminance values
-                for (let i = 0; i < imageData.data.length; i += 4) {
-                    luminanceData[i/4] = (imageData.data[i] + imageData.data[i + 1] + imageData.data[i + 2]) / 3;
-                }
-                
-                // Create luminance source from image data
-                const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, imageData.width, imageData.height);
-                const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
 
-                const result = zxing_qrcode_reader.decode(binaryBitmap, xzing_qrcode_reader_hints);
-                if (result && result.text) {
-                    console.debug('ZXing QR decode succeeded:', result.text);
-                    //showPopup(result.text);
-                }
-            } catch (error) {
-                console.debug('ZXing QR decode failed:', error);
-                return false;
-            }
-        }
+
         async function startWebcam() {
             try {
                 const constraints = {
@@ -315,9 +290,23 @@
                 
                 const processedCanvas = document.getElementById('processedCanvas');
                 const processedContext = processedCanvas.getContext('2d', { willReadFrequently: true });
+
+                // Add FPS tracking variables
+                let frameCount = 0;
+                let lastTime = performance.now();
+                let fps = 0;
                 
                 // Use requestAnimationFrame instead of setInterval
                 function processFrame() {
+                    // Calculate FPS
+                    frameCount++;
+                    const currentTime = performance.now();
+                    if (currentTime - lastTime >= 1000) {
+                        fps = frameCount;
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+
                     if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
                         processedCanvas.width = videoElement.videoWidth;
                         processedCanvas.height = videoElement.videoHeight;
@@ -342,26 +331,27 @@
                         );
                         
                         if (barcodeDetectorAPI) {
-                            console.log('Using Shape Detection API');
                             detectBarcodesWithShapeDetectionAPI(tempCanvas);
                         } 
-                        console.log('Using native barcode detection');
-                        detectBarcodeNative(tempCanvas);
-                        //detectQRCodeNative(tempCanvas);
+                        processCodesNative(tempCanvas);
                     
-
                         // Draw detection results in top left corner
                         processedContext.font = '20px Arial';
                         processedContext.fillStyle = detected_api ? '#00FF00' : '#FF0000';
-                        processedContext.fillText(`API Detection: ${detected_api}`, 10, 30);
+                        processedContext.fillText(`API Barcode Detection: ${detected_api}`, 10, 30);
                         processedContext.fillStyle = detected_zxing ? '#00FF00' : '#FF0000';
-                        processedContext.fillText(`ZXing Detection: ${detected_zxing}`, 10, 60);
+                        processedContext.fillText(`ZXing Barcode Detection: ${detected_zxing}`, 10, 60);
+
+                        // Draw FPS in top right corner
+                        processedContext.fillStyle = '#FFFFFF';
+                        processedContext.textAlign = 'right';
+                        processedContext.fillText(`FPS: ${fps}`, processedCanvas.width - 10, 30);
+                        processedContext.textAlign = 'left';  // Reset text alignment
 
                         // Draw red borders on the processed canvas
                         barcodeDetectorAPI? processedContext.strokeStyle = '#FF0000' : processedContext.strokeStyle = '#0000FF';
                         processedContext.lineWidth = 5;
                         processedContext.strokeRect(cropX, cropY, cropWidth, cropHeight);
-
                     }
                     
                     requestAnimationFrame(processFrame);
