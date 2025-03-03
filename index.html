@@ -237,7 +237,7 @@
                 const luminanceData = newImageData;
                 
                 // Create luminance source from processed data
-                const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, newImageData.width, newImageData.height);
+                const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, luminanceData.length, 1);
                 const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
 
                 const result = zxing_barcode_reader.decode(binaryBitmap, xzing_barcode_reader_hints);
