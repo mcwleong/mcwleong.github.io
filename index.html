@@ -229,7 +229,7 @@
             // Copy barcode data to middle section
             for (let x = 0; x < raw_barcode_line.length; x++) {
                 const idx = x + newImageMargin;
-                newImageData.data[idx] = raw_barcode_line[x];   
+                newImageData[idx] = raw_barcode_line[x];   
             }
             
             try {
