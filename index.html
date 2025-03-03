@@ -224,25 +224,17 @@
 
             // Create a 1-pixel height image data for ZXing
             const newImageMargin = Math.floor(raw_barcode_line.length * 0.1);
-            const newImageData = new ImageData(new Uint8ClampedArray((raw_barcode_line.length + 2 * newImageMargin) * 4).fill(255), raw_barcode_line.length + 2 * newImageMargin, 1);
+            const newImageData = new Uint8ClampedArray(raw_barcode_line.length + 2 * newImageMargin).fill(255);
 
             // Copy barcode data to middle section
             for (let x = 0; x < raw_barcode_line.length; x++) {
-                const idx = (x + newImageMargin) * 4;
-                newImageData.data[idx] = raw_barcode_line[x];     // R
-                newImageData.data[idx + 1] = raw_barcode_line[x]; // G
-                newImageData.data[idx + 2] = raw_barcode_line[x]; // B
-                newImageData.data[idx + 3] = 255;                 // A
+                const idx = x + newImageMargin;
+                newImageData.data[idx] = raw_barcode_line[x];   
             }
             
             try {
                 // Create a Uint8ClampedArray of the correct size for the luminance data
-                const luminanceData = new Uint8ClampedArray(newImageData.width * newImageData.height);
-                
-                // Convert RGBA to grayscale luminance values
-                for (let i = 0; i < newImageData.data.length; i += 4) {
-                    luminanceData[i/4] = (newImageData.data[i] + newImageData.data[i + 1] + newImageData.data[i + 2]) / 3;
-                }
+                const luminanceData = newImageData;
                 
                 // Create luminance source from processed data
                 const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, newImageData.width, newImageData.height);
