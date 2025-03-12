@@ -256,7 +256,6 @@
                     if (result && result.text) {
                         console.debug('ZXing ${reader.constructor.name} barcode decode succeeded:', result.text);
                         detected_zxing = true;
-                        resultFun(result.text);
 
                         return true;
                     }
