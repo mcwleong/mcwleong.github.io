@@ -235,34 +235,35 @@
                 newImageData[idx] = raw_barcode_line[x];   
             }
             
-            try {
-                // Create a Uint8ClampedArray of the correct size for the luminance data
-                const luminanceData = newImageData;
+    
+            // Create a Uint8ClampedArray of the correct size for the luminance data
+            const luminanceData = newImageData;
+
+            // Create luminance source from processed data
+            const luminanceSource = new RGBLuminanceSource(luminanceData, luminanceData.length, 1);
+            const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
+
+            detectedZxing = false;
+
+            for (const reader of zxing_barcode_reader) {
+                try {
+                    const result = reader.decode(binaryBitmap, xzing_barcode_reader_hints);
+                } catch (error) {
+                    console.debug('ZXing ${reader.constructor.name} barcode decode error:', result.text);
+                } finally {
                 
-                // Create luminance source from processed data
-                const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, luminanceData.length, 1);
-                const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
-                for (const reader of zxing_barcode_reader) {
-                    try {
-                        const result = reader.decode(binaryBitmap, xzing_barcode_reader_hints);
-                        if (result && result.text) {
-                            console.debug('ZXing decode succeeded:', result.text);
-                            //showPopup(result.text);
-                            detected_zxing = true;
-                            return true;
-                        }
-                    } catch (error) {
-                        // Continue to the next reader if decoding fails
-                        console.debug(`ZXing ${reader.constructor.name} read failed:`, error);
+                    if (result && result.text) {
+                        console.debug('ZXing ${reader.constructor.name} barcode decode succeeded:', result.text);
+                        detected_zxing = true;
+                        resultFun(result.text);
+
+                        return true;
                     }
                 }
-            } catch (error) {
-                //console.debug('ZXing decode failed:', error);
-                detected_zxing = false;
-                return false;
             }
 
-        } 
+        return false;
+    } 
 
 
 
