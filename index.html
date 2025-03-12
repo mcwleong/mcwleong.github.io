@@ -249,7 +249,7 @@
                 try {
                     const result = reader.decode(binaryBitmap, xzing_barcode_reader_hints);
                 } catch (error) {
-                    console.debug('ZXing ${reader.constructor.name} barcode decode error:', result.text);
+                    console.debug('ZXing ${reader.constructor.name} barcode decode error:', error);
                 } finally {
                 
                     if (result && result.text) {
