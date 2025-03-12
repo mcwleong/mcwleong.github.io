@@ -246,8 +246,9 @@
             detectedZxing = false;
 
             for (const reader of zxing_barcode_reader) {
+                let result = null;
                 try {
-                    const result = reader.decode(binaryBitmap, xzing_barcode_reader_hints);
+                    result = reader.decode(binaryBitmap, xzing_barcode_reader_hints);
                 } catch (error) {
                     console.debug('ZXing ${reader.constructor.name} barcode decode error:', error);
                 } finally {
