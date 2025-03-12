@@ -46,7 +46,10 @@
         let detected_zxing = false; 
 
         async function init_zxing_barcode_reader() {
-            const codeReader = new ZXing.Code128Reader();
+            const codeReader = [
+                new ZXing.Code128Reader(),
+                new ZXing.Code39Reader()
+            ];
             return codeReader;
         }
 
@@ -76,7 +79,7 @@
             }
 
             return new BarcodeDetector({
-                    formats: ['qr_code', 'code_128']
+                    formats: ['qr_code', 'code_128', 'code_39']
                 });
         }   
 
@@ -239,13 +242,19 @@
                 // Create luminance source from processed data
                 const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, luminanceData.length, 1);
                 const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
-
-                const result = zxing_barcode_reader.decode(binaryBitmap, xzing_barcode_reader_hints);
-                if (result && result.text) {
-                    console.debug('ZXing decode succeeded:', result.text);
-                    //showPopup(result.text);
-                    detected_zxing = true;
-                    return true;
+                for (const reader of zxing_barcode_reader) {
+                    try {
+                        const result = reader.decode(binaryBitmap, xzing_barcode_reader_hints);
+                        if (result && result.text) {
+                            console.debug('ZXing decode succeeded:', result.text);
+                            //showPopup(result.text);
+                            detected_zxing = true;
+                            return true;
+                        }
+                    } catch (error) {
+                        // Continue to the next reader if decoding fails
+                        console.debug(`ZXing ${reader.constructor.name} read failed:`, error);
+                    }
                 }
             } catch (error) {
                 //console.debug('ZXing decode failed:', error);
