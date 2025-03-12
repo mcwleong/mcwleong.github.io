@@ -240,8 +240,8 @@
             const luminanceData = newImageData;
 
             // Create luminance source from processed data
-            const luminanceSource = new RGBLuminanceSource(luminanceData, luminanceData.length, 1);
-            const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
+            const luminanceSource = new ZXing.RGBLuminanceSource(luminanceData, luminanceData.length, 1);
+            const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
 
             detectedZxing = false;
 
