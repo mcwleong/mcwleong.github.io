@@ -95,6 +95,7 @@
         <div class="main-content">
             <!-- Left Menu -->
             <aside class="left-menu">
+                <div class="menu-scroll">
                 <!-- Mode Toggle Section -->
                 <section class="menu-section">
                     <h2>Mode</h2>
@@ -163,6 +164,10 @@
                         </label>
                         <button class="btn btn-secondary" id="apply-dimensions">Apply</button>
                     </div>
+                    <label>
+                        Scale:
+                        <input type="number" id="output-scale" value="2" min="1" max="8" title="Canvas and margins are multiplied by this (e.g. scale 2 → 2× width, 2× height, 2× edge)">
+                    </label>
                 </section>
 
                 <!-- Margin Settings Section -->
@@ -178,21 +183,23 @@
                     </label>
                 </section>
 
+                </div>
+
                 <!-- Export Section -->
-                <section class="menu-section">
+                <section class="menu-section menu-section-export">
                     <h2>Export</h2>
                     <label>
                         Format:
                         <select id="export-format">
                             <option value="png">PNG</option>
-                            <option value="jpeg">JPEG</option>
+                            <option value="jpeg" selected>JPEG</option>
                             <option value="webp">WebP</option>
                         </select>
                     </label>
                     <label id="quality-label" style="display: none;">
                         Quality:
-                        <input type="range" id="export-quality" min="1" max="100" value="90">
-                        <span id="quality-value">90</span>%
+                        <input type="range" id="export-quality" min="1" max="100" value="95">
+                        <span id="quality-value">95</span>%
                     </label>
                     <button class="btn btn-primary btn-download" id="download-btn">Download Image</button>
                 </section>

@@ -17,10 +17,11 @@ export class UIController {
             fillMode: 'fit',
             outputWidth: 1920,
             outputHeight: 1080,
+            scale: 2,
             marginSize: 10,
             marginColor: '#FFFFFF',
-            currentFormat: 'png',
-            quality: 90,
+            currentFormat: 'jpeg',
+            quality: 95,
             canvas: null,
             files: [],
             cropAreas: [], // Array of {x, y, width, height} for each cell, null if no custom crop
@@ -35,6 +36,8 @@ export class UIController {
         this.initializeElements();
         this.setupEventListeners();
         this.initializeGridSelector();
+        this.state.scale = parseInt(this.elements.outputScale?.value, 10) || 2;
+        this.updateQualityVisibility();
     }
 
     initializeElements() {
@@ -55,6 +58,7 @@ export class UIController {
         this.elements.presetButtons = document.querySelectorAll('.btn-preset');
         this.elements.outputWidth = document.getElementById('output-width');
         this.elements.outputHeight = document.getElementById('output-height');
+        this.elements.outputScale = document.getElementById('output-scale');
         this.elements.applyDimensions = document.getElementById('apply-dimensions');
 
         // Margins
@@ -138,6 +142,10 @@ export class UIController {
 
         this.elements.marginSize.addEventListener('input', debouncedUpdate);
         this.elements.marginColor.addEventListener('input', debouncedUpdate);
+        this.elements.outputScale.addEventListener('input', () => {
+            this.handleScaleChange();
+            debouncedUpdate();
+        });
 
         // Crop area dragging (collage mode)
         this.elements.previewCanvas.addEventListener('mousedown', (e) => this.handleCanvasMouseDown(e));
@@ -278,6 +286,13 @@ export class UIController {
         }
     }
 
+    handleScaleChange() {
+        const scale = parseInt(this.elements.outputScale.value, 10) || 1;
+        if (scale >= 1 && scale <= 8) {
+            this.state.scale = scale;
+        }
+    }
+
     handleMarginChange() {
         this.state.marginSize = parseInt(this.elements.marginSize.value) || 0;
         this.state.marginColor = this.elements.marginColor.value;
@@ -347,13 +362,14 @@ export class UIController {
                 return;
             }
 
+            const scale = this.state.scale;
             const canvas = processCollage(
                 this.state.inputImages,
                 this.state.gridRows,
                 this.state.gridCols,
-                this.state.outputWidth,
-                this.state.outputHeight,
-                this.state.marginSize,
+                this.state.outputWidth * scale,
+                this.state.outputHeight * scale,
+                this.state.marginSize * scale,
                 this.state.marginColor,
                 this.state.fillMode,
                 this.state.cropAreas
@@ -366,11 +382,12 @@ export class UIController {
                 return;
             }
 
+            const scale = this.state.scale;
             const canvas = processImage(
                 this.state.inputImage,
-                this.state.outputWidth,
-                this.state.outputHeight,
-                this.state.marginSize,
+                this.state.outputWidth * scale,
+                this.state.outputHeight * scale,
+                this.state.marginSize * scale,
                 this.state.marginColor
             );
 
@@ -492,8 +509,9 @@ export class UIController {
 
     getCellAtPosition(x, y) {
         const { cellWidth, cellHeight } = this.calculateCellDimensions();
-        const cellCol = Math.floor((x - this.state.marginSize) / (cellWidth + this.state.marginSize));
-        const cellRow = Math.floor((y - this.state.marginSize) / (cellHeight + this.state.marginSize));
+        const edge = this.state.marginSize * this.state.scale;
+        const cellCol = Math.floor((x - edge) / (cellWidth + edge));
+        const cellRow = Math.floor((y - edge) / (cellHeight + edge));
 
         if (cellRow >= 0 && cellRow < this.state.gridRows && 
             cellCol >= 0 && cellCol < this.state.gridCols) {
@@ -503,10 +521,14 @@ export class UIController {
     }
 
     calculateCellDimensions() {
-        const totalMarginWidth = this.state.marginSize * (this.state.gridCols + 1);
-        const totalMarginHeight = this.state.marginSize * (this.state.gridRows + 1);
-        const cellWidth = (this.state.outputWidth - totalMarginWidth) / this.state.gridCols;
-        const cellHeight = (this.state.outputHeight - totalMarginHeight) / this.state.gridRows;
+        const scale = this.state.scale;
+        const w = this.state.outputWidth * scale;
+        const h = this.state.outputHeight * scale;
+        const edge = this.state.marginSize * scale;
+        const totalMarginWidth = edge * (this.state.gridCols + 1);
+        const totalMarginHeight = edge * (this.state.gridRows + 1);
+        const cellWidth = (w - totalMarginWidth) / this.state.gridCols;
+        const cellHeight = (h - totalMarginHeight) / this.state.gridRows;
         return { cellWidth, cellHeight };
     }
 
