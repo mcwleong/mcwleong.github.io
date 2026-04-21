@@ -5,143 +5,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image Pad - Image Padding & Collage Tool</title>
     <link rel="stylesheet" href="styles/main.css">
-    <style>
-        .site-nav-bar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 52px;
-            background: #1a1a2e;
-            color: #eee;
-            display: flex;
-            align-items: center;
-            padding: 0 12px;
-            z-index: 1010;
-        }
-        .site-nav-toggle {
-            background: none;
-            border: none;
-            color: inherit;
-            cursor: pointer;
-            padding: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-        .site-nav-toggle span {
-            display: block;
-            width: 24px;
-            height: 2px;
-            background: currentColor;
-        }
-        .site-nav-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 1011;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.2s, visibility 0.2s;
-        }
-        .site-nav-overlay.open { opacity: 1; visibility: visible; }
-        .site-nav-drawer {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 260px;
-            max-width: 85vw;
-            height: 100vh;
-            background: #16213e;
-            color: #eee;
-            z-index: 1012;
-            padding: 60px 0 24px 24px;
-            transform: translateX(-100%);
-            transition: transform 0.25s ease;
-        }
-        .site-nav-drawer.open { transform: translateX(0); }
-        .site-nav-drawer a {
-            display: block;
-            color: #eee;
-            text-decoration: none;
-            padding: 12px 16px;
-            margin: 4px 0;
-            border-radius: 8px;
-            transition: background 0.15s;
-        }
-        .site-nav-drawer a:hover { background: rgba(255,255,255,0.1); }
-        .site-nav-drawer a.active { background: rgba(255,255,255,0.15); font-weight: 600; }
-        .app-container { padding-top: 52px; }
-    </style>
 </head>
 <body>
-    <nav class="site-nav-bar">
-        <button class="site-nav-toggle" id="site-nav-toggle" aria-label="Open menu">
-            <span></span><span></span><span></span>
-        </button>
-    </nav>
-    <div class="site-nav-overlay" id="site-nav-overlay"></div>
-    <div class="site-nav-drawer" id="site-nav-drawer">
-        <a href="../index.html">Homepage</a>
-        <a href="../barcode-scanner.html">Barcode scanner test</a>
-        <a href="index.html" class="active">Image pad and collage generator</a>
-    </div>
     <div class="app-container">
         <header class="app-header">
             <h1>Image Pad</h1>
             <p class="subtitle">Image Padding & Photo Collage Tool</p>
         </header>
 
+        <div class="mobile-collapse-bar" id="mobile-collapse-bar">
+            <button type="button" class="collapse-controls-btn" id="collapse-controls-btn" aria-expanded="true" aria-controls="controls-panel" aria-label="Hide controls" title="Hide controls">
+                <span class="collapse-controls-icon" aria-hidden="true">^</span>
+            </button>
+        </div>
+
         <div class="main-content">
             <!-- Left Menu -->
-            <aside class="left-menu">
-                <div class="menu-scroll">
-                <!-- Mode Toggle Section -->
-                <section class="menu-section">
-                    <h2>Mode</h2>
-                    <div class="mode-toggle">
-                        <label class="radio-label">
-                            <input type="radio" name="mode" value="single" checked>
-                            <span>Single Image</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="mode" value="collage">
-                            <span>Photo Collage</span>
-                        </label>
-                    </div>
-                </section>
-
+            <aside class="left-menu" id="controls-panel">
                 <!-- Image Upload Section -->
                 <section class="menu-section" id="upload-section">
-                    <h2>Upload Image</h2>
+                    <h2>Upload Images</h2>
                     <div class="upload-area" id="upload-area">
                         <input type="file" id="file-input" accept="image/*" multiple>
                         <button class="btn btn-primary" id="choose-btn">Choose Image(s)</button>
-                        <p class="upload-hint">or drag and drop here</p>
+                        <label class="batch-mode-label">
+                            <input type="checkbox" id="batch-mode" name="batch-mode">
+                            <span>Batch processing</span>
+                        </label>
+                        <p class="upload-hint" id="upload-hint">or drag and drop here — use a 1×1 grid for a single padded image</p>
+                        <p class="batch-hint" id="batch-hint" hidden>Set grid, output size, margins, and export format first. With batch on, you will confirm those settings, then each group of (rows×columns) images becomes one file. Leftover images that do not fill a complete grid are skipped.</p>
                     </div>
                     <div class="image-info" id="image-info"></div>
                 </section>
 
-                <!-- Photo Collage Section -->
-                <section class="menu-section" id="collage-section" style="display: none;">
+                <!-- Grid & per-cell options -->
+                <section class="menu-section" id="collage-section">
                     <h2>Grid Layout</h2>
                     <div class="grid-selector" id="grid-selector">
                         <!-- Grid buttons will be generated by JavaScript -->
                     </div>
                     <div class="image-counter" id="image-counter"></div>
-                    <div class="fill-mode-selector">
-                        <label>
-                            Fill Mode:
-                            <select id="fill-mode">
-                                <option value="fit">Fit (Preserve Aspect)</option>
-                                <option value="vertical">Fill Vertical (Crop Horizontal)</option>
-                                <option value="horizontal">Fill Horizontal (Crop Vertical)</option>
-                            </select>
-                        </label>
-                    </div>
+                    <h3 class="subsection-title">Fill mode per cell (F · H · V)</h3>
+                    <div class="cell-fill-controls" id="cell-fill-controls"></div>
+                    <button type="button" class="btn btn-secondary swap-mode-btn" id="swap-mode-btn" aria-pressed="false">Swap photos (for touch)</button>
                     <div class="crop-hint">
-                        <p>💡 Click and drag on cells to adjust crop area</p>
+                        <p>Drag inside a cell to adjust crop. <strong>Phone/tablet:</strong> turn on <em>Swap photos</em>, then tap two cells. <strong>Desktop:</strong> hold <kbd>Alt</kbd> and click two cells. <kbd>Esc</kbd> cancels.</p>
                     </div>
+                    <div class="swap-status" id="swap-status" hidden></div>
                 </section>
 
                 <!-- Output Size Section -->
@@ -151,23 +61,19 @@
                         <button class="btn btn-preset" data-preset="portrait">Portrait<br>1080 × 1920</button>
                         <button class="btn btn-preset" data-preset="landscape">Landscape<br>1920 × 1080</button>
                         <button class="btn btn-preset" data-preset="square">Square<br>1080 × 1080</button>
-                        <button class="btn btn-preset" data-preset="instagram">Instagram<br>1080 × 1350</button>
+                        <button class="btn btn-preset active" data-preset="instagram">Instagram<br>1080 × 1350</button>
                     </div>
                     <div class="custom-dimensions">
                         <label>
                             Width:
-                            <input type="number" id="output-width" value="1920" min="1" max="10000">
+                            <input type="number" id="output-width" value="1080" min="1" max="10000">
                         </label>
                         <label>
                             Height:
-                            <input type="number" id="output-height" value="1080" min="1" max="10000">
+                            <input type="number" id="output-height" value="1350" min="1" max="10000">
                         </label>
                         <button class="btn btn-secondary" id="apply-dimensions">Apply</button>
                     </div>
-                    <label>
-                        Scale:
-                        <input type="number" id="output-scale" value="2" min="1" max="8" title="Canvas and margins are multiplied by this (e.g. scale 2 → 2× width, 2× height, 2× edge)">
-                    </label>
                 </section>
 
                 <!-- Margin Settings Section -->
@@ -175,7 +81,7 @@
                     <h2>Margin Settings</h2>
                     <label>
                         Margin Size (px):
-                        <input type="number" id="margin-size" value="10" min="0" max="500">
+                        <input type="number" id="margin-size" value="20" min="0" max="500">
                     </label>
                     <label>
                         Margin Color:
@@ -183,10 +89,8 @@
                     </label>
                 </section>
 
-                </div>
-
                 <!-- Export Section -->
-                <section class="menu-section menu-section-export">
+                <section class="menu-section">
                     <h2>Export</h2>
                     <label>
                         Format:
@@ -196,10 +100,10 @@
                             <option value="webp">WebP</option>
                         </select>
                     </label>
-                    <label id="quality-label" style="display: none;">
+                    <label id="quality-label" style="display: flex;">
                         Quality:
-                        <input type="range" id="export-quality" min="1" max="100" value="95">
-                        <span id="quality-value">95</span>%
+                        <input type="range" id="export-quality" min="1" max="100" value="90">
+                        <span id="quality-value">90</span>%
                     </label>
                     <button class="btn btn-primary btn-download" id="download-btn">Download Image</button>
                 </section>
@@ -219,17 +123,6 @@
     </div>
 
     <script type="module" src="scripts/main.js"></script>
-    <script>
-        (function() {
-            var toggle = document.getElementById('site-nav-toggle');
-            var overlay = document.getElementById('site-nav-overlay');
-            var drawer = document.getElementById('site-nav-drawer');
-            function open() { drawer.classList.add('open'); overlay.classList.add('open'); }
-            function close() { drawer.classList.remove('open'); overlay.classList.remove('open'); }
-            toggle.addEventListener('click', open);
-            overlay.addEventListener('click', close);
-        })();
-    </script>
 </body>
 </html>
 

@@ -87,23 +87,69 @@ export function processImage(image, outputWidth, outputHeight, marginSize, margi
     return canvas;
 }
 
-/**
- * Calculate cell dimensions for grid layout
- * @param {number} outputWidth - Total output width
- * @param {number} outputHeight - Total output height
- * @param {number} gridRows - Number of rows
- * @param {number} gridCols - Number of columns
- * @param {number} marginSize - Margin size
- * @returns {Object} - {cellWidth, cellHeight}
- */
-export function calculateCellDimensions(outputWidth, outputHeight, gridRows, gridCols, marginSize) {
-    const totalMarginWidth = marginSize * (gridCols + 1);
-    const totalMarginHeight = marginSize * (gridRows + 1);
-    
-    const cellWidth = (outputWidth - totalMarginWidth) / gridCols;
-    const cellHeight = (outputHeight - totalMarginHeight) / gridRows;
+export function normalizeMarginSize(marginSize) {
+    const m = Number(marginSize);
+    if (!Number.isFinite(m) || m < 0) return 0;
+    return Math.round(m);
+}
 
-    return { cellWidth, cellHeight };
+/**
+ * Snap drawImage destination to whole pixels so adjacent cells do not leave
+ * subpixel gaps or semi-transparent seams (common when margin is 0).
+ */
+function drawImageDestSnapped9(ctx, image, sx, sy, sw, sh, dx, dy, dw, dh) {
+    const ix = Math.floor(dx);
+    const iy = Math.floor(dy);
+    const iw = Math.max(1, Math.ceil(dx + dw - ix));
+    const ih = Math.max(1, Math.ceil(dy + dh - iy));
+    ctx.drawImage(image, sx, sy, sw, sh, ix, iy, iw, ih);
+}
+
+function drawImageDestSnapped5(ctx, image, dx, dy, dw, dh) {
+    const ix = Math.floor(dx);
+    const iy = Math.floor(dy);
+    const iw = Math.max(1, Math.ceil(dx + dw - ix));
+    const ih = Math.max(1, Math.ceil(dy + dh - iy));
+    ctx.drawImage(image, ix, iy, iw, ih);
+}
+
+/**
+ * Integer pixel layout for grid cells so they tile exactly with no fractional gaps.
+ * Extra pixels go to the first columns / rows. Margin is rounded to an integer px value.
+ */
+export function getGridLayout(outputWidth, outputHeight, gridRows, gridCols, marginSize) {
+    const m = normalizeMarginSize(marginSize);
+    const innerW = Math.max(0, outputWidth - m * (gridCols + 1));
+    const innerH = Math.max(0, outputHeight - m * (gridRows + 1));
+
+    const baseW = Math.floor(innerW / gridCols);
+    const extraW = innerW - baseW * gridCols;
+    const baseH = Math.floor(innerH / gridRows);
+    const extraH = innerH - baseH * gridRows;
+
+    const cellWidths = [];
+    for (let c = 0; c < gridCols; c++) {
+        cellWidths[c] = baseW + (c < extraW ? 1 : 0);
+    }
+    const cellHeights = [];
+    for (let r = 0; r < gridRows; r++) {
+        cellHeights[r] = baseH + (r < extraH ? 1 : 0);
+    }
+
+    const cellXs = [];
+    let x = m;
+    for (let c = 0; c < gridCols; c++) {
+        cellXs[c] = x;
+        x += cellWidths[c] + m;
+    }
+    const cellYs = [];
+    let y = m;
+    for (let r = 0; r < gridRows; r++) {
+        cellYs[r] = y;
+        y += cellHeights[r] + m;
+    }
+
+    return { cellXs, cellYs, cellWidths, cellHeights };
 }
 
 /**
@@ -111,25 +157,20 @@ export function calculateCellDimensions(outputWidth, outputHeight, gridRows, gri
  * Images fill cells edge-to-edge. Margin size is the gap between cells.
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {HTMLImageElement} image - Image to draw
- * @param {number} cellRow - Row index (0-based)
- * @param {number} cellCol - Column index (0-based)
- * @param {number} cellWidth - Width of the cell
- * @param {number} cellHeight - Height of the cell
- * @param {number} marginSize - Margin size (gap between cells)
- * @param {string} marginColor - Margin color
+ * @param {number} cellX - Left edge of cell (pixels)
+ * @param {number} cellY - Top edge of cell (pixels)
+ * @param {number} cellWidth - Width of the cell (pixels)
+ * @param {number} cellHeight - Height of the cell (pixels)
  * @param {string} fillMode - Fill mode: 'fit', 'vertical', or 'horizontal'
  * @param {Object|null} customCrop - Custom crop area {x, y, width, height} in image coordinates, or null
+ * @param {number} bleedRight - Extra destination width (px) to overlap the cell to the right (seam fix when margin is 0)
+ * @param {number} bleedDown - Extra destination height (px) to overlap the cell below
  */
-export function drawImageInCell(ctx, image, cellRow, cellCol, cellWidth, cellHeight, marginSize, marginColor, fillMode = 'fit', customCrop = null) {
-    // Calculate cell position
-    const cellX = marginSize + cellCol * (cellWidth + marginSize);
-    const cellY = marginSize + cellRow * (cellHeight + marginSize);
-
-    // Fill cell with margin color (for empty cells)
-    ctx.fillStyle = marginColor;
-    ctx.fillRect(cellX, cellY, cellWidth, cellHeight);
-
+export function drawImageInCell(ctx, image, cellX, cellY, cellWidth, cellHeight, fillMode = 'fit', customCrop = null, bleedRight = 0, bleedDown = 0) {
     if (!image) return;
+
+    const br = bleedRight;
+    const bd = bleedDown;
 
     let drawX, drawY, drawWidth, drawHeight;
     let sourceX = 0, sourceY = 0, sourceWidth = image.width, sourceHeight = image.height;
@@ -151,10 +192,10 @@ export function drawImageInCell(ctx, image, cellRow, cellCol, cellWidth, cellHei
         drawX = cellX + (cellWidth - drawWidth) / 2;
         drawY = cellY + (cellHeight - drawHeight) / 2;
 
-        ctx.drawImage(
-            image,
-            sourceX, sourceY, sourceWidth, sourceHeight,  // Source rectangle (cropped)
-            drawX, drawY, drawWidth, drawHeight            // Destination rectangle
+        drawImageDestSnapped9(
+            ctx, image,
+            sourceX, sourceY, sourceWidth, sourceHeight,
+            drawX, drawY, drawWidth + br, drawHeight + bd
         );
         return;
     }
@@ -170,8 +211,7 @@ export function drawImageInCell(ctx, image, cellRow, cellCol, cellWidth, cellHei
         drawX = cellX + (cellWidth - drawWidth) / 2;
         drawY = cellY + (cellHeight - drawHeight) / 2;
 
-        // Draw full image
-        ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+        drawImageDestSnapped5(ctx, image, drawX, drawY, drawWidth + br, drawHeight + bd);
     } else if (fillMode === 'vertical') {
         // Fill vertical: Always fill cell height, crop width if image exceeds cell width
         const scale = cellHeight / image.height;
@@ -186,16 +226,16 @@ export function drawImageInCell(ctx, image, cellRow, cellCol, cellWidth, cellHei
             drawX = cellX;
             sourceWidth = cellWidth / scale;
             sourceX = (image.width - sourceWidth) / 2;
-            ctx.drawImage(
-                image,
-                sourceX, sourceY, sourceWidth, sourceHeight,  // Source rectangle (cropped)
-                drawX, drawY, drawWidth, drawHeight            // Destination rectangle
+            drawImageDestSnapped9(
+                ctx, image,
+                sourceX, sourceY, sourceWidth, sourceHeight,
+                drawX, drawY, drawWidth + br, drawHeight + bd
             );
         } else {
             // Image fits within cell width, no cropping needed
             drawWidth = scaledWidth;
             drawX = cellX + (cellWidth - drawWidth) / 2;
-            ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+            drawImageDestSnapped5(ctx, image, drawX, drawY, drawWidth + br, drawHeight + bd);
         }
     } else if (fillMode === 'horizontal') {
         // Fill horizontal: Always fill cell width, crop height if image exceeds cell height
@@ -211,16 +251,16 @@ export function drawImageInCell(ctx, image, cellRow, cellCol, cellWidth, cellHei
             drawY = cellY;
             sourceHeight = cellHeight / scale;
             sourceY = (image.height - sourceHeight) / 2;
-            ctx.drawImage(
-                image,
-                sourceX, sourceY, sourceWidth, sourceHeight,  // Source rectangle (cropped)
-                drawX, drawY, drawWidth, drawHeight            // Destination rectangle
+            drawImageDestSnapped9(
+                ctx, image,
+                sourceX, sourceY, sourceWidth, sourceHeight,
+                drawX, drawY, drawWidth + br, drawHeight + bd
             );
         } else {
             // Image fits within cell height, no cropping needed
             drawHeight = scaledHeight;
             drawY = cellY + (cellHeight - drawHeight) / 2;
-            ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+            drawImageDestSnapped5(ctx, image, drawX, drawY, drawWidth + br, drawHeight + bd);
         }
     }
 }
@@ -234,32 +274,42 @@ export function drawImageInCell(ctx, image, cellRow, cellCol, cellWidth, cellHei
  * @param {number} outputHeight - Output height
  * @param {number} marginSize - Margin size
  * @param {string} marginColor - Margin color
- * @param {string} fillMode - Fill mode: 'fit', 'vertical', or 'horizontal'
+ * @param {string[]|string} fillModes - Per-cell fill mode ('fit'|'vertical'|'horizontal'), or single string for all cells
  * @param {Array<Object|null>} cropAreas - Array of custom crop areas for each cell, or null
  * @returns {HTMLCanvasElement} - Processed canvas
  */
-export function processCollage(images, gridRows, gridCols, outputWidth, outputHeight, marginSize, marginColor, fillMode = 'fit', cropAreas = null) {
+export function processCollage(images, gridRows, gridCols, outputWidth, outputHeight, marginSize, marginColor, fillModes = 'fit', cropAreas = null) {
     const canvas = document.createElement('canvas');
     canvas.width = outputWidth;
     canvas.height = outputHeight;
     const ctx = canvas.getContext('2d');
 
+    const m = normalizeMarginSize(marginSize);
+
     // Fill entire canvas with margin color
     ctx.fillStyle = marginColor;
     ctx.fillRect(0, 0, outputWidth, outputHeight);
 
-    // Calculate cell dimensions
-    const { cellWidth, cellHeight } = calculateCellDimensions(
-        outputWidth, outputHeight, gridRows, gridCols, marginSize
-    );
+    const layout = getGridLayout(outputWidth, outputHeight, gridRows, gridCols, m);
+    const defaultFill = typeof fillModes === 'string' ? fillModes : 'fit';
 
-    // Draw each cell
+    const multiCell = gridRows * gridCols > 1;
+    const seamBleed = m === 0 && multiCell;
+
+    // Row-major: later cells paint over 1px overlap from earlier (eliminates bilinear seams)
     for (let row = 0; row < gridRows; row++) {
         for (let col = 0; col < gridCols; col++) {
             const index = row * gridCols + col;
             const image = images[index] || null;
             const customCrop = cropAreas && cropAreas[index] ? cropAreas[index] : null;
-            drawImageInCell(ctx, image, row, col, cellWidth, cellHeight, marginSize, marginColor, fillMode, customCrop);
+            const fillMode = Array.isArray(fillModes) ? (fillModes[index] || defaultFill) : defaultFill;
+            const cellX = layout.cellXs[col];
+            const cellY = layout.cellYs[row];
+            const cw = layout.cellWidths[col];
+            const ch = layout.cellHeights[row];
+            const bleedR = seamBleed && col < gridCols - 1 ? 1 : 0;
+            const bleedD = seamBleed && row < gridRows - 1 ? 1 : 0;
+            drawImageInCell(ctx, image, cellX, cellY, cw, ch, fillMode, customCrop, bleedR, bleedD);
         }
     }
 

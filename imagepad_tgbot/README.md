@@ -1,115 +1,125 @@
-# Image Pad - Image Padding & Photo Collage Tool
+# Image Pad — Image Padding & Photo Collage Tool
 
-A client-side web application for padding images to specific dimensions and creating photo collages with customizable grid layouts. All processing is done locally in your browser - no server uploads required.
+A client-side web app for padding images to exact output sizes and building photo collages on a grid. Everything runs in your browser with the Canvas API—**no uploads**, no backend required for the app itself.
 
 ## Features
 
-### Single Image Mode
-- **Image Padding**: Pad images to specific output dimensions
-- **Aspect Ratio Presets**: 
-  - Portrait: 1080 × 1920
-  - Landscape: 1920 × 1080
-  - Square: 1080 × 1080
-  - Instagram: 1080 × 1350
-- **Custom Dimensions**: Set any width and height
-- **Margin Control**: Adjustable margin size (default: 10px) and color
-- **Smart Scaling**: Automatically scales oversized images to fit while preserving aspect ratio
-- **Centered Images**: Images are automatically centered within the output canvas
+### Unified grid workflow (no separate “single” mode)
 
-### Photo Collage Mode
-- **Grid Layouts**: Choose from 9 grid options:
-  - 1×1, 1×2, 1×3
-  - 2×1, 2×2, 2×3
-  - 3×1, 3×2, 3×3
-- **Multiple Image Upload**: Upload multiple images at once
-- **Edge-to-Edge Spacing**: Margin size represents the edge-to-edge distance between cells
-- **Full Cell Coverage**: Images fill cells edge-to-edge (no padding within cells)
-- **Fill Mode Options**:
-  - Fit: Scale to fit while preserving aspect ratio (no cropping)
-  - Fill Vertical: Fill cell height, crop width if needed (centered crop)
-  - Fill Horizontal: Fill cell width, crop height if needed (centered crop)
-- **Flexible Layout**: Empty cells are filled with margin color
+There is one workflow: pick a **grid layout**. A **1×1** grid is the default and matches the old single-image case—one cell inside the outer margins, with the same padding and export behavior. Use a larger grid for collages.
 
-### Export Options
-- **Multiple Formats**: PNG, JPEG, WebP
-- **Quality Control**: Adjustable quality for JPEG and WebP formats
-- **Instant Download**: Download processed images immediately
+### Output & margins
 
-## Getting Started
+- **Presets**: Portrait 1080×1920, Landscape 1920×1080, Square 1080×1080, Instagram 1080×1350  
+- **Custom width/height** (validated range)  
+- **Margins**: Size (px) and color; margin is also the **gap** between grid cells  
 
-### Running the Application
+### Grid layouts
 
-**Important**: Due to browser security restrictions, ES6 modules require an HTTP server. You cannot open `index.html` directly from the file system.
+Nine layouts: **1×1**, 1×2, 1×3, 2×1, 2×2, 2×3, 3×1, 3×2, **3×3** (visual selector in the sidebar).
 
-#### Option 1: Python Server (Recommended)
-1. Make sure Python 3 is installed
-2. Run the server:
-   ```bash
-   python server.py
-   ```
-   Or double-click `server.bat` on Windows
-3. Open your browser to `http://localhost:8000/index.html`
+### Upload
 
-#### Option 2: Node.js Server
-If you have Node.js installed:
+- **Choose Image(s)** or drag-and-drop; the file input is always multi-select  
+- Images fill cells in **row-major order** (left-to-right, top-to-bottom) up to the number of cells  
+- If you pick more files than cells, only the first *N* are used (with an alert)  
+
+### Per-cell fill mode
+
+Each row is labeled **R1C1**, **R1C2**, … with three toggle buttons **F** (fit), **H** (fill horizontal), **V** (fill vertical); tooltips spell out the full mode.
+
+| Mode | Behavior |
+|------|------------|
+| **Fit** | Scale to fit inside the cell, preserve aspect ratio (letterboxing in cell uses margin color) |
+| **Fill vertical** | Fill cell height; crop width if needed (centered unless you reframe) |
+| **Fill horizontal** | Fill cell width; crop height if needed (centered unless you reframe) |
+
+Changing a cell’s mode clears **only that cell’s** custom crop.
+
+### Reframe (crop pan)
+
+On the **preview canvas**, click and **drag** inside a cell that has a photo to adjust the visible region (custom crop in image coordinates), according to that cell’s fill mode.
+
+### Swap two cells
+
+**Phone / tablet (no Alt key):** tap **Swap photos (for touch)** in the sidebar, then **tap the first cell** on the preview, then **tap the second**. Tap **Done swapping** (or **Esc**) to leave swap mode and use drag-to-crop again.
+
+**Desktop:** hold **Alt** and **click** two cells (or turn on **Swap photos** and click twice—same as touch).
+
+This exchanges the **image, file reference, fill mode, and crop** for those two indices. **Esc** exits swap mode and clears a pending selection. Swapping with an **empty** cell moves the photo into that slot (and clears the other).
+
+### Export
+
+- **PNG**, **JPEG**, **WebP** with quality slider for lossy formats  
+- Filenames: `image-<timestamp>.*` for **1×1**, `collage-<timestamp>.*` for multi-cell grids  
+
+### Empty cells
+
+Unused slots are filled with the **margin color**.
+
+## Getting started
+
+**ES modules need HTTP** — do not open `index.html` as a `file://` URL.
+
+### Option 1: Python (recommended)
+
+```bash
+python server.py
+```
+
+Then open **http://localhost:8000/index.html** (the script may open a browser for you).
+
+On Windows you can double-click **`server.bat`** instead (runs `python server.py` and pauses on exit).
+
+### Option 2: Node
+
 ```bash
 npx http-server -p 8000
 ```
-Then open `http://localhost:8000/index.html`
 
-#### Option 3: VS Code Live Server
-If using VS Code, install the "Live Server" extension and right-click `index.html` → "Open with Live Server"
+Open **http://localhost:8000/index.html**
 
-### Usage
+### Option 3: VS Code Live Server
 
-1. **Open the Application**: Open `index.html` in your web browser
-2. **Choose Mode**: Select "Single Image" or "Photo Collage" mode
-3. **Upload Image(s)**: 
-   - Click "Choose Image(s)" button, or
-   - Drag and drop image files onto the upload area
-4. **Configure Settings**:
-   - Select output size preset or enter custom dimensions
-   - Adjust margin size and color
-   - For collage mode: select grid layout
-5. **Preview**: See real-time preview of your processed image
-6. **Export**: Choose format and quality, then click "Download Image"
+Right-click `index.html` → **Open with Live Server**.
 
-## Browser Compatibility
+### Usage checklist
 
-- Chrome 60+
-- Firefox 55+
-- Safari 11+
-- Edge 79+
+1. Start a local server and open the app URL  
+2. Optionally change the grid (default **1×1** for one padded image)  
+3. Upload one or more images  
+4. Set each cell’s **Fit / Fill vertical / Fill horizontal** as needed  
+5. Drag on the preview to reframe; use **Swap photos** + two taps on mobile, or **Alt+click** twice on desktop, to swap cells  
+6. Set output size, margins, format, then **Download Image**  
 
-## File Structure
+## Browser compatibility
+
+Chrome 60+, Firefox 55+, Safari 11+, Edge 79+ (File API, Canvas, ES modules).
+
+## Project layout
 
 ```
-imagepad-app/
-├── index.html              # Main HTML file
-├── server.py               # Python HTTP server for local development
-├── server.bat              # Windows batch file to start server
+imagepad_tgbot/
+├── index.html
+├── server.py              # local static server (port 8000)
+├── server.bat             # Windows: double-click to start server.py
+├── plan.md                # design / architecture (detailed)
 ├── styles/
-│   └── main.css            # Application styles
+│   └── main.css
 ├── scripts/
-│   ├── main.js             # Application entry point
-│   ├── imageProcessor.js   # Image processing logic
-│   ├── uiController.js     # UI interactions and state
-│   └── exportHandler.js    # Export and download functionality
-└── README.md               # This file
+│   ├── main.js            # entry (initializes UIController)
+│   ├── uiController.js    # DOM, state, swap, crop drag
+│   ├── imageProcessor.js  # load images, collage render, cell draw
+│   └── exportHandler.js   # blob + download + filename
+└── README.md
 ```
 
-## Technical Details
+## Technical notes
 
-- **Pure JavaScript**: No external dependencies
-- **Canvas API**: All image processing uses HTML5 Canvas
-- **File API**: Local file reading and processing
-- **Client-Side Only**: No server communication required
-
-## Privacy
-
-All image processing happens entirely in your browser. Images are never uploaded to any server, ensuring complete privacy and security.
+- **Vanilla ES modules** — no npm dependencies for the app  
+- **`processCollage`** drives all previews and exports (including 1×1); legacy `processImage` remains in `imageProcessor.js` but is not used by the UI  
+- **Privacy**: images stay on your machine; the dev server only serves static files  
 
 ## License
 
-This project is open source and available for personal and commercial use.
-
+Open source — personal and commercial use welcome.

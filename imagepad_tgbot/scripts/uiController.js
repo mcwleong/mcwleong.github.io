@@ -3,62 +3,231 @@
  * Handles all UI interactions and updates
  */
 
-import { loadImage, loadMultipleImages, processImage, processCollage } from './imageProcessor.js';
-import { exportImage, downloadImage, generateFilename } from './exportHandler.js';
+import { loadMultipleImages, processCollage, getGridLayout, normalizeMarginSize } from './imageProcessor.js';
+import { exportImage, downloadImage, generateFilename, generateBatchFilename } from './exportHandler.js';
 
 export class UIController {
     constructor() {
         this.state = {
-            mode: 'single',
-            inputImage: null,
             inputImages: [],
             gridRows: 1,
             gridCols: 1,
-            fillMode: 'fit',
-            outputWidth: 1920,
-            outputHeight: 1080,
-            scale: 2,
-            marginSize: 10,
+            cellFillModes: ['fit'],
+            outputWidth: 1080,
+            outputHeight: 1350,
+            marginSize: 20,
             marginColor: '#FFFFFF',
             currentFormat: 'jpeg',
-            quality: 95,
+            quality: 90,
             canvas: null,
             files: [],
-            cropAreas: [], // Array of {x, y, width, height} for each cell, null if no custom crop
+            cropAreas: [],
             isDragging: false,
             dragCellIndex: null,
             dragStartX: 0,
             dragStartY: 0,
-            previewScale: 1
+            previewScale: 1,
+            swapAnchorIndex: null,
+            swapModeActive: false,
+            batchMode: false,
+            batchAllImages: null,
+            batchFiles: null,
+            batchConfirmStamp: null
         };
 
         this.elements = {};
         this.initializeElements();
         this.setupEventListeners();
         this.initializeGridSelector();
-        this.state.scale = parseInt(this.elements.outputScale?.value, 10) || 2;
+
+        this.elements.exportFormat.value = 'jpeg';
+        this.state.currentFormat = 'jpeg';
         this.updateQualityVisibility();
+        this.handlePresetSelection('instagram');
+        this.updateSwapModeButton();
+    }
+
+    invalidateBatchConfirm() {
+        this.state.batchConfirmStamp = null;
+    }
+
+    getBatchSettingsStamp() {
+        return JSON.stringify({
+            r: this.state.gridRows,
+            c: this.state.gridCols,
+            w: this.state.outputWidth,
+            h: this.state.outputHeight,
+            m: normalizeMarginSize(this.state.marginSize),
+            mc: this.state.marginColor,
+            fmt: this.state.currentFormat,
+            q: this.state.quality,
+            fills: [...this.state.cellFillModes]
+        });
+    }
+
+    buildBatchConfirmMessage() {
+        const cells = this.state.gridRows * this.state.gridCols;
+        const m = normalizeMarginSize(this.state.marginSize);
+        const fmt = this.state.currentFormat.toUpperCase();
+        const lossy = this.state.currentFormat !== 'png';
+        const lines = [
+            'Use these settings for batch export?',
+            '',
+            `Grid: ${this.state.gridRows}×${this.state.gridCols} (${cells} images per file)`,
+            `Output: ${this.state.outputWidth}×${this.state.outputHeight}px`,
+            `Margin: ${m}px, color ${this.state.marginColor}`,
+            `Format: ${fmt}` + (lossy ? ` (quality ${this.state.quality}%)` : ''),
+            '',
+            'You will then pick images. Images that do not complete a full grid are skipped (with an alert).'
+        ];
+        return lines.join('\n');
+    }
+
+    ensureBatchSettingsConfirmed() {
+        const stamp = this.getBatchSettingsStamp();
+        if (this.state.batchConfirmStamp === stamp) return true;
+        if (!window.confirm(this.buildBatchConfirmMessage())) return false;
+        this.state.batchConfirmStamp = stamp;
+        return true;
+    }
+
+    handleBatchModeChange(e) {
+        const on = e.target.checked;
+        this.state.batchMode = on;
+        this.elements.batchHint.hidden = !on;
+        this.updateUploadHintText();
+        this.invalidateBatchConfirm();
+
+        if (!on) {
+            this.exitSwapMode();
+            if (this.state.batchAllImages) {
+                this.clearBatchWork();
+            }
+            this.updateBatchInteractionLock();
+            return;
+        }
+
+        if (this.countLoadedImages() > 0 && !this.state.batchAllImages) {
+            if (!window.confirm('Batch mode needs a new multi-image selection. Clear current images?')) {
+                e.target.checked = false;
+                this.state.batchMode = false;
+                this.elements.batchHint.hidden = true;
+                this.updateUploadHintText();
+                return;
+            }
+            this.state.inputImages = [];
+            this.state.files = [];
+            this.initializeCropAreas();
+            this.showPlaceholder();
+            this.updateImageInfo();
+            this.updateImageCounter();
+        }
+        this.updateBatchInteractionLock();
+    }
+
+    updateUploadHintText() {
+        if (!this.elements.uploadHint) return;
+        if (this.state.batchMode) {
+            this.elements.uploadHint.textContent =
+                'Choose images after confirming settings. Each full grid of cells becomes one file.';
+        } else {
+            this.elements.uploadHint.textContent =
+                'or drag and drop here — use a 1×1 grid for a single padded image';
+        }
+    }
+
+    clearBatchWork() {
+        this.state.batchAllImages = null;
+        this.state.batchFiles = null;
+        this.state.inputImages = [];
+        this.state.files = [];
+        this.initializeCropAreas();
+        this.showPlaceholder();
+        this.state.canvas = null;
+        this.updateImageInfo();
+        this.updateImageCounter();
+        this.updateBatchInteractionLock();
+    }
+
+    updateBatchInteractionLock() {
+        const locked = this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0;
+        if (this.elements.swapModeBtn) {
+            this.elements.swapModeBtn.disabled = locked;
+        }
+        if (this.elements.previewCanvas) {
+            this.elements.previewCanvas.classList.toggle('batch-locked', locked);
+        }
+    }
+
+    async handleBatchFileUpload(files) {
+        const cells = this.state.gridRows * this.state.gridCols;
+        const list = Array.from(files);
+        const remainder = list.length % cells;
+
+        if (remainder > 0) {
+            alert(
+                `${remainder} image(s) will be skipped: a ${this.state.gridRows}×${this.state.gridCols} grid needs exactly ${cells} images per file. Only complete groups are exported.`
+            );
+        }
+
+        const usableCount = list.length - remainder;
+        if (usableCount === 0) {
+            alert(`Batch export needs at least ${cells} image(s) to create one file.`);
+            this.clearBatchWork();
+            return;
+        }
+
+        const toLoad = list.slice(0, usableCount);
+        const loaded = await loadMultipleImages(toLoad);
+        this.state.batchAllImages = loaded;
+        this.state.batchFiles = toLoad.slice();
+
+        this.state.inputImages = [];
+        this.state.files = [];
+        for (let i = 0; i < cells; i++) {
+            this.state.inputImages[i] = loaded[i];
+            this.state.files[i] = toLoad[i];
+        }
+
+        this.initializeCropAreas();
+        this.updateImageInfo();
+        this.updateImageCounter();
+        this.updateBatchInteractionLock();
+        this.updatePreview();
+    }
+
+    toggleControlsCollapsed() {
+        const collapsed = document.body.classList.toggle('controls-collapsed');
+        const btn = this.elements.collapseControlsBtn;
+        if (btn) {
+            const show = collapsed ? 'Show controls' : 'Hide controls';
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            btn.setAttribute('aria-label', show);
+            btn.title = show;
+        }
+        this.updatePreview();
     }
 
     initializeElements() {
-        // Mode toggle
-        this.elements.modeInputs = document.querySelectorAll('input[name="mode"]');
-        
         // Upload
         this.elements.fileInput = document.getElementById('file-input');
         this.elements.chooseBtn = document.getElementById('choose-btn');
         this.elements.uploadArea = document.getElementById('upload-area');
+        this.elements.uploadHint = document.getElementById('upload-hint');
+        this.elements.batchHint = document.getElementById('batch-hint');
+        this.elements.batchMode = document.getElementById('batch-mode');
         this.elements.imageInfo = document.getElementById('image-info');
-        this.elements.uploadSection = document.getElementById('upload-section');
-        this.elements.collageSection = document.getElementById('collage-section');
         this.elements.imageCounter = document.getElementById('image-counter');
-        this.elements.fillMode = document.getElementById('fill-mode');
+        this.elements.cellFillControls = document.getElementById('cell-fill-controls');
+        this.elements.swapStatus = document.getElementById('swap-status');
+        this.elements.swapModeBtn = document.getElementById('swap-mode-btn');
+
+        this._touchTracking = null;
 
         // Output size
         this.elements.presetButtons = document.querySelectorAll('.btn-preset');
         this.elements.outputWidth = document.getElementById('output-width');
         this.elements.outputHeight = document.getElementById('output-height');
-        this.elements.outputScale = document.getElementById('output-scale');
         this.elements.applyDimensions = document.getElementById('apply-dimensions');
 
         // Margins
@@ -78,16 +247,15 @@ export class UIController {
         this.elements.previewInfo = document.getElementById('preview-info');
         this.elements.previewContainer = document.getElementById('preview-container');
         this.elements.gridSelector = document.getElementById('grid-selector');
+        this.elements.collapseControlsBtn = document.getElementById('collapse-controls-btn');
     }
 
     setupEventListeners() {
-        // Mode toggle
-        this.elements.modeInputs.forEach(input => {
-            input.addEventListener('change', (e) => this.handleModeToggle(e.target.value));
-        });
-
         // File upload
-        this.elements.chooseBtn.addEventListener('click', () => this.elements.fileInput.click());
+        this.elements.chooseBtn.addEventListener('click', () => {
+            if (this.state.batchMode && !this.ensureBatchSettingsConfirmed()) return;
+            this.elements.fileInput.click();
+        });
         this.elements.fileInput.addEventListener('change', (e) => this.handleFileUpload(e.target.files));
         
         // Drag and drop
@@ -114,23 +282,19 @@ export class UIController {
         this.elements.marginSize.addEventListener('input', () => this.handleMarginChange());
         this.elements.marginColor.addEventListener('input', () => this.handleMarginChange());
 
-        // Fill mode (collage)
-        this.elements.fillMode.addEventListener('change', (e) => {
-            this.state.fillMode = e.target.value;
-            // Reset crop areas when fill mode changes
-            this.initializeCropAreas();
-            this.updatePreview();
-        });
-
         // Export
         this.elements.exportFormat.addEventListener('change', (e) => {
             this.state.currentFormat = e.target.value;
+            this.invalidateBatchConfirm();
             this.updateQualityVisibility();
         });
         this.elements.exportQuality.addEventListener('input', (e) => {
             this.state.quality = parseInt(e.target.value);
             this.elements.qualityValue.textContent = this.state.quality;
+            this.invalidateBatchConfirm();
         });
+
+        this.elements.batchMode.addEventListener('change', (e) => this.handleBatchModeChange(e));
         this.elements.downloadBtn.addEventListener('click', () => this.handleDownload());
 
         // Debounce for input changes
@@ -142,17 +306,32 @@ export class UIController {
 
         this.elements.marginSize.addEventListener('input', debouncedUpdate);
         this.elements.marginColor.addEventListener('input', debouncedUpdate);
-        this.elements.outputScale.addEventListener('input', () => {
-            this.handleScaleChange();
-            debouncedUpdate();
-        });
 
         // Crop area dragging (collage mode)
         this.elements.previewCanvas.addEventListener('mousedown', (e) => this.handleCanvasMouseDown(e));
         this.elements.previewCanvas.addEventListener('mousemove', (e) => this.handleCanvasMouseMove(e));
         this.elements.previewCanvas.addEventListener('mouseup', () => this.handleCanvasMouseUp());
         this.elements.previewCanvas.addEventListener('mouseleave', () => this.handleCanvasMouseUp());
+
+        this.elements.previewCanvas.addEventListener('touchstart', (e) => this.handleCanvasTouchStart(e), { passive: false });
+        this.elements.previewCanvas.addEventListener('touchmove', (e) => this.handleCanvasTouchMove(e), { passive: false });
+        this.elements.previewCanvas.addEventListener('touchend', (e) => this.handleCanvasTouchEnd(e));
+        this.elements.previewCanvas.addEventListener('touchcancel', () => {
+            this._touchTracking = null;
+            if (this.state.isDragging) this.handleCanvasMouseUp();
+        });
+
         this.elements.previewCanvas.style.cursor = 'grab';
+
+        this.elements.swapModeBtn.addEventListener('click', () => this.handleSwapModeToggle());
+
+        if (this.elements.collapseControlsBtn) {
+            this.elements.collapseControlsBtn.addEventListener('click', () => this.toggleControlsCollapsed());
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.exitSwapMode();
+        });
     }
 
     initializeGridSelector() {
@@ -196,47 +375,41 @@ export class UIController {
         this.handleGridSelection(1, 1);
     }
 
-    handleModeToggle(mode) {
-        this.state.mode = mode;
-        
-        if (mode === 'collage') {
-            this.elements.collageSection.style.display = 'block';
-            this.elements.fileInput.setAttribute('multiple', '');
-        } else {
-            this.elements.collageSection.style.display = 'none';
-            this.elements.fileInput.removeAttribute('multiple');
-            this.state.inputImages = [];
-            this.state.inputImage = this.state.inputImages[0] || null;
-        }
-        
-        this.updateImageCounter();
-        this.updatePreview();
-    }
-
     async handleFileUpload(files) {
         if (!files || files.length === 0) return;
 
         try {
-            if (this.state.mode === 'collage') {
-                const maxImages = this.state.gridRows * this.state.gridCols;
-                const filesArray = Array.from(files).slice(0, maxImages);
-                
-                if (files.length > maxImages) {
-                    alert(`Only the first ${maxImages} images will be used for the ${this.state.gridRows}×${this.state.gridCols} grid.`);
-                }
-
-                this.state.files = filesArray;
-                this.state.inputImages = await loadMultipleImages(filesArray);
-                // Initialize crop areas for new images
-                this.initializeCropAreas();
-                this.updateImageInfo();
-                this.updateImageCounter();
-            } else {
-                const file = files[0];
-                this.state.files = [file];
-                this.state.inputImage = await loadImage(file);
-                this.updateImageInfo();
+            if (this.state.batchMode) {
+                if (!this.ensureBatchSettingsConfirmed()) return;
+                await this.handleBatchFileUpload(files);
+                return;
             }
+
+            this.state.batchAllImages = null;
+            this.state.batchFiles = null;
+            this.updateBatchInteractionLock();
+
+            const maxImages = this.state.gridRows * this.state.gridCols;
+            const filesArray = Array.from(files).slice(0, maxImages);
+
+            if (files.length > maxImages) {
+                alert(`Only the first ${maxImages} images will be used for the ${this.state.gridRows}×${this.state.gridCols} grid.`);
+            }
+
+            const loaded = await loadMultipleImages(filesArray);
+            const imagesByCell = [];
+            for (let i = 0; i < loaded.length; i++) {
+                imagesByCell[i] = loaded[i];
+            }
+            const filesByCell = [];
+            for (let i = 0; i < filesArray.length; i++) {
+                filesByCell[i] = filesArray[i];
+            }
+            this.state.files = filesByCell;
+            this.state.inputImages = imagesByCell;
+            this.initializeCropAreas();
+            this.updateImageInfo();
+            this.updateImageCounter();
 
             this.updatePreview();
         } catch (error) {
@@ -266,6 +439,7 @@ export class UIController {
             });
 
             this.updatePreview();
+            this.invalidateBatchConfirm();
         }
     }
 
@@ -281,25 +455,26 @@ export class UIController {
             this.elements.presetButtons.forEach(btn => btn.classList.remove('active'));
             
             this.updatePreview();
+            this.invalidateBatchConfirm();
         } else {
             alert('Please enter valid dimensions (1-10000).');
-        }
-    }
-
-    handleScaleChange() {
-        const scale = parseInt(this.elements.outputScale.value, 10) || 1;
-        if (scale >= 1 && scale <= 8) {
-            this.state.scale = scale;
         }
     }
 
     handleMarginChange() {
         this.state.marginSize = parseInt(this.elements.marginSize.value) || 0;
         this.state.marginColor = this.elements.marginColor.value;
+        this.invalidateBatchConfirm();
         this.updatePreview();
     }
 
     handleGridSelection(rows, cols) {
+        this.exitSwapMode();
+        this.invalidateBatchConfirm();
+        if (this.state.batchAllImages) {
+            this.clearBatchWork();
+        }
+
         this.state.gridRows = rows;
         this.state.gridCols = cols;
 
@@ -314,16 +489,32 @@ export class UIController {
         // Trim images if needed
         const maxImages = rows * cols;
         if (this.state.inputImages.length > maxImages) {
-            this.state.inputImages = this.state.inputImages.slice(0, maxImages);
-            this.state.files = this.state.files.slice(0, maxImages);
-            this.state.cropAreas = this.state.cropAreas.slice(0, maxImages);
+            const nextImages = [];
+            const nextFiles = [];
+            for (let i = 0; i < maxImages; i++) {
+                nextImages[i] = this.state.inputImages[i];
+                nextFiles[i] = this.state.files[i];
+            }
+            this.state.inputImages = nextImages;
+            this.state.files = nextFiles;
         }
 
-        // Initialize crop areas array
+        this.resizeCellParallelArrays();
         this.initializeCropAreas();
+        this.renderCellFillControls();
 
         this.updateImageCounter();
         this.updatePreview();
+    }
+
+    resizeCellParallelArrays() {
+        const cellCount = this.state.gridRows * this.state.gridCols;
+        while (this.state.cellFillModes.length < cellCount) {
+            this.state.cellFillModes.push('fit');
+        }
+        if (this.state.cellFillModes.length > cellCount) {
+            this.state.cellFillModes = this.state.cellFillModes.slice(0, cellCount);
+        }
     }
 
     initializeCropAreas() {
@@ -331,68 +522,127 @@ export class UIController {
         this.state.cropAreas = new Array(cellCount).fill(null);
     }
 
+    renderCellFillControls() {
+        const container = this.elements.cellFillControls;
+        container.replaceChildren();
+        const cellCount = this.state.gridRows * this.state.gridCols;
+        const fillButtons = [
+            { value: 'fit', letter: 'F', title: 'Fit (preserve aspect)' },
+            { value: 'horizontal', letter: 'H', title: 'Fill horizontal (crop vertical)' },
+            { value: 'vertical', letter: 'V', title: 'Fill vertical (crop horizontal)' }
+        ];
+
+        for (let i = 0; i < cellCount; i++) {
+            const row = document.createElement('div');
+            row.className = 'cell-fill-row';
+
+            const rowIdx = Math.floor(i / this.state.gridCols) + 1;
+            const colIdx = (i % this.state.gridCols) + 1;
+            const lab = document.createElement('span');
+            lab.className = 'cell-fill-label';
+            lab.textContent = `R${rowIdx}C${colIdx}`;
+
+            const btnGroup = document.createElement('div');
+            btnGroup.className = 'cell-fill-btns';
+
+            const idx = i;
+            const current = this.state.cellFillModes[i] || 'fit';
+
+            fillButtons.forEach(({ value, letter, title }) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'cell-fill-btn';
+                btn.textContent = letter;
+                btn.title = title;
+                btn.dataset.fill = value;
+                if (current === value) btn.classList.add('active');
+
+                btn.addEventListener('click', () => {
+                    if (this.state.cellFillModes[idx] === value) return;
+                    this.state.cellFillModes[idx] = value;
+                    this.state.cropAreas[idx] = null;
+                    btnGroup.querySelectorAll('.cell-fill-btn').forEach((b) => {
+                        b.classList.toggle('active', b.dataset.fill === value);
+                    });
+                    this.invalidateBatchConfirm();
+                    this.updatePreview();
+                });
+
+                btnGroup.appendChild(btn);
+            });
+
+            row.appendChild(lab);
+            row.appendChild(btnGroup);
+            container.appendChild(row);
+        }
+    }
+
+    countLoadedImages() {
+        const cellCount = this.state.gridRows * this.state.gridCols;
+        let n = 0;
+        for (let i = 0; i < cellCount; i++) {
+            if (this.state.inputImages[i]) n++;
+        }
+        return n;
+    }
+
     updateImageInfo() {
-        if (this.state.mode === 'single' && this.state.inputImage) {
-            this.elements.imageInfo.textContent = 
-                `Image: ${this.state.files[0]?.name || 'Unknown'}\n` +
-                `Dimensions: ${this.state.inputImage.width} × ${this.state.inputImage.height}px`;
-        } else if (this.state.mode === 'collage') {
-            this.elements.imageInfo.textContent = 
-                `${this.state.inputImages.length} image(s) loaded`;
-        } else {
+        if (this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0) {
+            const cells = this.state.gridRows * this.state.gridCols;
+            const total = this.state.batchAllImages.length;
+            const n = total / cells;
+            this.elements.imageInfo.textContent =
+                `Batch: ${n} output file(s) from ${total} images (${cells} per file). Preview shows the first collage only.`;
+            return;
+        }
+        if (this.countLoadedImages() === 0) {
             this.elements.imageInfo.textContent = '';
+            return;
+        }
+        if (this.state.gridRows === 1 && this.state.gridCols === 1 && this.state.inputImages[0]) {
+            const img = this.state.inputImages[0];
+            this.elements.imageInfo.textContent =
+                `Image: ${this.state.files[0]?.name || 'Unknown'}\n` +
+                `Dimensions: ${img.width} × ${img.height}px`;
+        } else {
+            this.elements.imageInfo.textContent =
+                `${this.countLoadedImages()} image(s) loaded`;
         }
     }
 
     updateImageCounter() {
-        if (this.state.mode === 'collage') {
-            const maxImages = this.state.gridRows * this.state.gridCols;
-            const currentImages = this.state.inputImages.length;
-            this.elements.imageCounter.textContent = 
-                `${currentImages} of ${maxImages} images selected`;
-        } else {
-            this.elements.imageCounter.textContent = '';
+        const maxImages = this.state.gridRows * this.state.gridCols;
+        if (this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0) {
+            const total = this.state.batchAllImages.length;
+            const files = total / maxImages;
+            this.elements.imageCounter.textContent =
+                `Batch: ${total} images → ${files} file(s) (${maxImages} per file)`;
+            return;
         }
+        const currentImages = this.countLoadedImages();
+        this.elements.imageCounter.textContent =
+            `${currentImages} of ${maxImages} images selected`;
     }
 
     updatePreview() {
-        if (this.state.mode === 'collage') {
-            if (this.state.inputImages.length === 0) {
-                this.showPlaceholder();
-                return;
-            }
-
-            const scale = this.state.scale;
-            const canvas = processCollage(
-                this.state.inputImages,
-                this.state.gridRows,
-                this.state.gridCols,
-                this.state.outputWidth * scale,
-                this.state.outputHeight * scale,
-                this.state.marginSize * scale,
-                this.state.marginColor,
-                this.state.fillMode,
-                this.state.cropAreas
-            );
-
-            this.displayCanvas(canvas);
-        } else {
-            if (!this.state.inputImage) {
-                this.showPlaceholder();
-                return;
-            }
-
-            const scale = this.state.scale;
-            const canvas = processImage(
-                this.state.inputImage,
-                this.state.outputWidth * scale,
-                this.state.outputHeight * scale,
-                this.state.marginSize * scale,
-                this.state.marginColor
-            );
-
-            this.displayCanvas(canvas);
+        if (this.countLoadedImages() === 0) {
+            this.showPlaceholder();
+            return;
         }
+
+        const canvas = processCollage(
+            this.state.inputImages,
+            this.state.gridRows,
+            this.state.gridCols,
+            this.state.outputWidth,
+            this.state.outputHeight,
+            normalizeMarginSize(this.state.marginSize),
+            this.state.marginColor,
+            this.state.cellFillModes,
+            this.state.cropAreas
+        );
+
+        this.displayCanvas(canvas);
     }
 
     displayCanvas(canvas) {
@@ -431,6 +681,11 @@ export class UIController {
     }
 
     async handleDownload() {
+        if (this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0) {
+            await this.handleBatchDownload();
+            return;
+        }
+
         if (!this.state.canvas) {
             alert('Please upload and process an image first.');
             return;
@@ -443,7 +698,8 @@ export class UIController {
                 this.state.quality / 100
             );
 
-            const filename = generateFilename(this.state.currentFormat, this.state.mode);
+            const multiCell = this.state.gridRows * this.state.gridCols > 1;
+            const filename = generateFilename(this.state.currentFormat, multiCell);
             downloadImage(blob, filename);
         } catch (error) {
             console.error('Error exporting image:', error);
@@ -451,17 +707,164 @@ export class UIController {
         }
     }
 
+    async handleBatchDownload() {
+        const cells = this.state.gridRows * this.state.gridCols;
+        const all = this.state.batchAllImages;
+        if (!all || all.length === 0) return;
+        if (all.length % cells !== 0) {
+            alert('Batch data is incomplete. Please choose images again.');
+            return;
+        }
+
+        const nBatches = all.length / cells;
+        const fmt = this.state.currentFormat;
+        const q = this.state.quality / 100;
+        const multiCell = cells > 1;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+
+        try {
+            for (let b = 0; b < nBatches; b++) {
+                const chunk = [];
+                for (let i = 0; i < cells; i++) {
+                    chunk[i] = all[b * cells + i];
+                }
+                const canvas = processCollage(
+                    chunk,
+                    this.state.gridRows,
+                    this.state.gridCols,
+                    this.state.outputWidth,
+                    this.state.outputHeight,
+                    normalizeMarginSize(this.state.marginSize),
+                    this.state.marginColor,
+                    this.state.cellFillModes,
+                    null
+                );
+                const blob = await exportImage(canvas, fmt, q);
+                const filename = generateBatchFilename(fmt, multiCell, b + 1, nBatches, ts);
+                downloadImage(blob, filename);
+                await new Promise((r) => setTimeout(r, 250));
+            }
+        } catch (error) {
+            console.error('Error in batch export:', error);
+            alert('Batch export failed. Please try again.');
+        }
+    }
+
+    isBatchPreviewLocked() {
+        return Boolean(
+            this.state.batchMode &&
+                this.state.batchAllImages &&
+                this.state.batchAllImages.length > 0
+        );
+    }
+
+    clearSwapAnchor() {
+        this.state.swapAnchorIndex = null;
+        this.updateSwapStatus();
+    }
+
+    exitSwapMode() {
+        this.state.swapModeActive = false;
+        this.state.swapAnchorIndex = null;
+        this.updateSwapModeButton();
+        this.updateSwapStatus();
+    }
+
+    updateSwapModeButton() {
+        const btn = this.elements.swapModeBtn;
+        btn.classList.toggle('active', this.state.swapModeActive);
+        btn.setAttribute('aria-pressed', this.state.swapModeActive ? 'true' : 'false');
+        btn.textContent = this.state.swapModeActive ? 'Done swapping' : 'Swap photos (for touch)';
+    }
+
+    handleSwapModeToggle() {
+        if (this.state.swapModeActive) {
+            this.exitSwapMode();
+        } else {
+            this.state.swapModeActive = true;
+            this.state.swapAnchorIndex = null;
+            this.updateSwapModeButton();
+            this.updateSwapStatus();
+        }
+    }
+
+    trySwapSelect(cellIndex) {
+        if (this.state.swapAnchorIndex === null) {
+            this.state.swapAnchorIndex = cellIndex;
+            this.updateSwapStatus();
+        } else {
+            this.swapCells(this.state.swapAnchorIndex, cellIndex);
+        }
+    }
+
+    updateSwapStatus() {
+        const el = this.elements.swapStatus;
+        if (this.state.swapAnchorIndex !== null) {
+            el.hidden = false;
+            const i = this.state.swapAnchorIndex;
+            const rowIdx = Math.floor(i / this.state.gridCols) + 1;
+            const colIdx = (i % this.state.gridCols) + 1;
+            const tap = this.state.swapModeActive;
+            el.textContent = tap
+                ? `Swap: R${rowIdx}C${colIdx} selected — tap another cell`
+                : `Swap: R${rowIdx}C${colIdx} selected — Alt+click another cell (Esc to cancel)`;
+            return;
+        }
+        if (this.state.swapModeActive) {
+            el.hidden = false;
+            el.textContent = 'Swap mode: tap first cell on the preview, then the second';
+            return;
+        }
+        el.hidden = true;
+        el.textContent = '';
+    }
+
+    swapCells(i, j) {
+        if (i === j) {
+            this.clearSwapAnchor();
+            return;
+        }
+        const swap = (arr) => {
+            const tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+        };
+        swap(this.state.inputImages);
+        swap(this.state.files);
+        swap(this.state.cropAreas);
+        swap(this.state.cellFillModes);
+        this.renderCellFillControls();
+        this.clearSwapAnchor();
+        this.updateImageInfo();
+        this.updateImageCounter();
+        this.updatePreview();
+    }
+
+    getCanvasLogicalCoords(clientX, clientY) {
+        const rect = this.elements.previewCanvas.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left) / this.state.previewScale,
+            y: (clientY - rect.top) / this.state.previewScale
+        };
+    }
+
     // Mouse event handlers for crop area dragging
     handleCanvasMouseDown(e) {
-        if (this.state.mode !== 'collage' || this.state.inputImages.length === 0) return;
+        if (this.countLoadedImages() === 0) return;
+        if (this.isBatchPreviewLocked()) return;
 
-        const rect = this.elements.previewCanvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / this.state.previewScale;
-        const y = (e.clientY - rect.top) / this.state.previewScale;
+        const { x, y } = this.getCanvasLogicalCoords(e.clientX, e.clientY);
 
-        // Find which cell was clicked
         const cellIndex = this.getCellAtPosition(x, y);
-        if (cellIndex !== null && this.state.inputImages[cellIndex]) {
+        if (cellIndex === null) return;
+
+        if (e.altKey || this.state.swapModeActive) {
+            e.preventDefault();
+            this.trySwapSelect(cellIndex);
+            return;
+        }
+
+        if (this.state.inputImages[cellIndex]) {
             this.state.isDragging = true;
             this.state.dragCellIndex = cellIndex;
             this.state.dragStartX = x;
@@ -472,26 +875,20 @@ export class UIController {
 
     handleCanvasMouseMove(e) {
         if (!this.state.isDragging || this.state.dragCellIndex === null) {
-            // Update cursor
-            if (this.state.mode === 'collage' && this.state.inputImages.length > 0) {
-                const rect = this.elements.previewCanvas.getBoundingClientRect();
-                const x = (e.clientX - rect.left) / this.state.previewScale;
-                const y = (e.clientY - rect.top) / this.state.previewScale;
+            if (this.countLoadedImages() > 0) {
+                const { x, y } = this.getCanvasLogicalCoords(e.clientX, e.clientY);
                 const cellIndex = this.getCellAtPosition(x, y);
-                this.elements.previewCanvas.style.cursor = 
+                this.elements.previewCanvas.style.cursor =
                     (cellIndex !== null && this.state.inputImages[cellIndex]) ? 'grab' : 'default';
             }
             return;
         }
 
-        const rect = this.elements.previewCanvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / this.state.previewScale;
-        const y = (e.clientY - rect.top) / this.state.previewScale;
+        const { x, y } = this.getCanvasLogicalCoords(e.clientX, e.clientY);
 
         const dx = x - this.state.dragStartX;
         const dy = y - this.state.dragStartY;
 
-        // Update crop area position
         this.updateCropAreaPosition(this.state.dragCellIndex, dx, dy);
 
         this.state.dragStartX = x;
@@ -507,42 +904,123 @@ export class UIController {
         }
     }
 
-    getCellAtPosition(x, y) {
-        const { cellWidth, cellHeight } = this.calculateCellDimensions();
-        const edge = this.state.marginSize * this.state.scale;
-        const cellCol = Math.floor((x - edge) / (cellWidth + edge));
-        const cellRow = Math.floor((y - edge) / (cellHeight + edge));
+    handleCanvasTouchStart(e) {
+        if (this.countLoadedImages() === 0) return;
+        if (this.isBatchPreviewLocked()) return;
+        if (e.touches.length !== 1) return;
 
-        if (cellRow >= 0 && cellRow < this.state.gridRows && 
-            cellCol >= 0 && cellCol < this.state.gridCols) {
-            return cellRow * this.state.gridCols + cellCol;
+        const t = e.touches[0];
+        const { x, y } = this.getCanvasLogicalCoords(t.clientX, t.clientY);
+        const cellIndex = this.getCellAtPosition(x, y);
+
+        this._touchTracking = {
+            startLX: x,
+            startLY: y,
+            startTime: Date.now(),
+            startCellIndex: cellIndex,
+            moved: false
+        };
+        e.preventDefault();
+    }
+
+    handleCanvasTouchMove(e) {
+        if (!this._touchTracking || e.touches.length !== 1) return;
+
+        const t = e.touches[0];
+        const { x, y } = this.getCanvasLogicalCoords(t.clientX, t.clientY);
+        const dx = x - this._touchTracking.startLX;
+        const dy = y - this._touchTracking.startLY;
+        if (dx * dx + dy * dy > 64) {
+            this._touchTracking.moved = true;
+        }
+
+        if (this.state.swapModeActive) {
+            e.preventDefault();
+            return;
+        }
+
+        const startCell = this._touchTracking.startCellIndex;
+        if (
+            this._touchTracking.moved &&
+            startCell !== null &&
+            this.state.inputImages[startCell]
+        ) {
+            if (!this.state.isDragging) {
+                this.state.isDragging = true;
+                this.state.dragCellIndex = startCell;
+                this.state.dragStartX = this._touchTracking.startLX;
+                this.state.dragStartY = this._touchTracking.startLY;
+            }
+            const stepX = x - this.state.dragStartX;
+            const stepY = y - this.state.dragStartY;
+            this.updateCropAreaPosition(this.state.dragCellIndex, stepX, stepY);
+            this.state.dragStartX = x;
+            this.state.dragStartY = y;
+            this.updatePreview();
+        }
+        e.preventDefault();
+    }
+
+    handleCanvasTouchEnd(e) {
+        const tr = this._touchTracking;
+        this._touchTracking = null;
+
+        if (this.state.swapModeActive && tr && !tr.moved && tr.startCellIndex !== null) {
+            this.trySwapSelect(tr.startCellIndex);
+        } else if (this.state.isDragging) {
+            this.handleCanvasMouseUp();
+        }
+    }
+
+    getGridLayoutState() {
+        return getGridLayout(
+            this.state.outputWidth,
+            this.state.outputHeight,
+            this.state.gridRows,
+            this.state.gridCols,
+            normalizeMarginSize(this.state.marginSize)
+        );
+    }
+
+    getCellPixelSize(cellIndex) {
+        const layout = this.getGridLayoutState();
+        const col = cellIndex % this.state.gridCols;
+        const row = Math.floor(cellIndex / this.state.gridCols);
+        return {
+            cellWidth: layout.cellWidths[col],
+            cellHeight: layout.cellHeights[row]
+        };
+    }
+
+    getCellAtPosition(x, y) {
+        const layout = this.getGridLayoutState();
+        for (let row = 0; row < this.state.gridRows; row++) {
+            for (let col = 0; col < this.state.gridCols; col++) {
+                const cx = layout.cellXs[col];
+                const cy = layout.cellYs[row];
+                const cw = layout.cellWidths[col];
+                const ch = layout.cellHeights[row];
+                if (x >= cx && x < cx + cw && y >= cy && y < cy + ch) {
+                    return row * this.state.gridCols + col;
+                }
+            }
         }
         return null;
     }
 
-    calculateCellDimensions() {
-        const scale = this.state.scale;
-        const w = this.state.outputWidth * scale;
-        const h = this.state.outputHeight * scale;
-        const edge = this.state.marginSize * scale;
-        const totalMarginWidth = edge * (this.state.gridCols + 1);
-        const totalMarginHeight = edge * (this.state.gridRows + 1);
-        const cellWidth = (w - totalMarginWidth) / this.state.gridCols;
-        const cellHeight = (h - totalMarginHeight) / this.state.gridRows;
-        return { cellWidth, cellHeight };
-    }
-
     updateCropAreaPosition(cellIndex, dx, dy) {
+        const fillMode = this.state.cellFillModes[cellIndex] || 'fit';
+
         if (!this.state.cropAreas[cellIndex]) {
             // Initialize crop area if it doesn't exist
             const image = this.state.inputImages[cellIndex];
             if (!image) return;
 
-            const { cellWidth, cellHeight } = this.calculateCellDimensions();
+            const { cellWidth, cellHeight } = this.getCellPixelSize(cellIndex);
             
             // Calculate initial crop area in image coordinates based on fill mode
             let cropWidth, cropHeight;
-            if (this.state.fillMode === 'fit') {
+            if (fillMode === 'fit') {
                 // For fit mode, use the full image or scaled version
                 const scaleX = cellWidth / image.width;
                 const scaleY = cellHeight / image.height;
@@ -553,7 +1031,7 @@ export class UIController {
                 // Clamp to image size
                 cropWidth = Math.min(cropWidth, image.width);
                 cropHeight = Math.min(cropHeight, image.height);
-            } else if (this.state.fillMode === 'vertical') {
+            } else if (fillMode === 'vertical') {
                 // Fill vertical: crop width to fit cell width
                 const scale = cellHeight / image.height;
                 cropHeight = image.height;
@@ -580,13 +1058,13 @@ export class UIController {
         
         // Calculate scale factor from canvas to image coordinates
         // This is the scale used to display the image in the cell
-        const { cellWidth, cellHeight } = this.calculateCellDimensions();
+        const { cellWidth, cellHeight } = this.getCellPixelSize(cellIndex);
         let imageScale;
-        if (this.state.fillMode === 'fit') {
+        if (fillMode === 'fit') {
             const scaleX = cellWidth / image.width;
             const scaleY = cellHeight / image.height;
             imageScale = Math.min(scaleX, scaleY);
-        } else if (this.state.fillMode === 'vertical') {
+        } else if (fillMode === 'vertical') {
             imageScale = cellHeight / image.height;
         } else {
             imageScale = cellWidth / image.width;

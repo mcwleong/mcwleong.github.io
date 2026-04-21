@@ -51,12 +51,22 @@ export function downloadImage(blob, filename) {
 /**
  * Generate filename based on format and timestamp
  * @param {string} format - Export format
- * @param {string} mode - 'single' or 'collage'
+ * @param {boolean} multiCellGrid - true when grid has more than one cell (affects default filename prefix)
  * @returns {string} - Generated filename
  */
-export function generateFilename(format, mode = 'single') {
+export function generateFilename(format, multiCellGrid = false) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const prefix = mode === 'collage' ? 'collage' : 'image';
+    const prefix = multiCellGrid ? 'collage' : 'image';
     return `${prefix}-${timestamp}.${format}`;
+}
+
+/**
+ * Filename for one file in a batch export run (shared timestamp across the batch).
+ */
+export function generateBatchFilename(format, multiCellGrid, batchIndex, batchTotal, timestamp) {
+    const prefix = multiCellGrid ? 'collage' : 'image';
+    const i = String(batchIndex).padStart(2, '0');
+    const n = String(batchTotal).padStart(2, '0');
+    return `${prefix}-batch${i}-of-${n}-${timestamp}.${format}`;
 }
 
