@@ -15,6 +15,7 @@ export class UIController {
             cellFillModes: ['fit'],
             outputWidth: 1080,
             outputHeight: 1350,
+            scale: 2,
             marginSize: 20,
             marginColor: '#FFFFFF',
             currentFormat: 'jpeg',
@@ -45,6 +46,10 @@ export class UIController {
         this.updateQualityVisibility();
         this.handlePresetSelection('instagram');
         this.updateSwapModeButton();
+        {
+            const v = parseInt(this.elements.outputScale.value, 10);
+            this.state.scale = Number.isFinite(v) && v >= 1 && v <= 8 ? v : 2;
+        }
     }
 
     invalidateBatchConfirm() {
@@ -57,6 +62,7 @@ export class UIController {
             c: this.state.gridCols,
             w: this.state.outputWidth,
             h: this.state.outputHeight,
+            s: this.state.scale,
             m: normalizeMarginSize(this.state.marginSize),
             mc: this.state.marginColor,
             fmt: this.state.currentFormat,
@@ -74,7 +80,7 @@ export class UIController {
             'Use these settings for batch export?',
             '',
             `Grid: ${this.state.gridRows}×${this.state.gridCols} (${cells} images per file)`,
-            `Output: ${this.state.outputWidth}×${this.state.outputHeight}px`,
+            `Output: ${this.state.outputWidth}×${this.state.outputHeight}px at ${this.state.scale}× scale (${this.state.outputWidth * this.state.scale}×${this.state.outputHeight * this.state.scale}px)`,
             `Margin: ${m}px, color ${this.state.marginColor}`,
             `Format: ${fmt}` + (lossy ? ` (quality ${this.state.quality}%)` : ''),
             '',
@@ -228,6 +234,7 @@ export class UIController {
         this.elements.presetButtons = document.querySelectorAll('.btn-preset');
         this.elements.outputWidth = document.getElementById('output-width');
         this.elements.outputHeight = document.getElementById('output-height');
+        this.elements.outputScale = document.getElementById('output-scale');
         this.elements.applyDimensions = document.getElementById('apply-dimensions');
 
         // Margins
@@ -306,6 +313,11 @@ export class UIController {
 
         this.elements.marginSize.addEventListener('input', debouncedUpdate);
         this.elements.marginColor.addEventListener('input', debouncedUpdate);
+        this.elements.outputScale.addEventListener('input', () => {
+            this.handleScaleChange();
+            this.invalidateBatchConfirm();
+            debouncedUpdate();
+        });
 
         // Crop area dragging (collage mode)
         this.elements.previewCanvas.addEventListener('mousedown', (e) => this.handleCanvasMouseDown(e));
@@ -458,6 +470,13 @@ export class UIController {
             this.invalidateBatchConfirm();
         } else {
             alert('Please enter valid dimensions (1-10000).');
+        }
+    }
+
+    handleScaleChange() {
+        const scale = parseInt(this.elements.outputScale.value, 10) || 1;
+        if (scale >= 1 && scale <= 8) {
+            this.state.scale = scale;
         }
     }
 
@@ -630,13 +649,14 @@ export class UIController {
             return;
         }
 
+        const s = this.state.scale;
         const canvas = processCollage(
             this.state.inputImages,
             this.state.gridRows,
             this.state.gridCols,
-            this.state.outputWidth,
-            this.state.outputHeight,
-            normalizeMarginSize(this.state.marginSize),
+            this.state.outputWidth * s,
+            this.state.outputHeight * s,
+            normalizeMarginSize(this.state.marginSize * s),
             this.state.marginColor,
             this.state.cellFillModes,
             this.state.cropAreas
@@ -723,6 +743,7 @@ export class UIController {
         const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
 
         try {
+            const s = this.state.scale;
             for (let b = 0; b < nBatches; b++) {
                 const chunk = [];
                 for (let i = 0; i < cells; i++) {
@@ -732,9 +753,9 @@ export class UIController {
                     chunk,
                     this.state.gridRows,
                     this.state.gridCols,
-                    this.state.outputWidth,
-                    this.state.outputHeight,
-                    normalizeMarginSize(this.state.marginSize),
+                    this.state.outputWidth * s,
+                    this.state.outputHeight * s,
+                    normalizeMarginSize(this.state.marginSize * s),
                     this.state.marginColor,
                     this.state.cellFillModes,
                     null
@@ -973,12 +994,13 @@ export class UIController {
     }
 
     getGridLayoutState() {
+        const s = this.state.scale;
         return getGridLayout(
-            this.state.outputWidth,
-            this.state.outputHeight,
+            this.state.outputWidth * s,
+            this.state.outputHeight * s,
             this.state.gridRows,
             this.state.gridCols,
-            normalizeMarginSize(this.state.marginSize)
+            normalizeMarginSize(this.state.marginSize * s)
         );
     }
 
