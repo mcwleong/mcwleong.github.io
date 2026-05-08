@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropdown table test</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f7f8fc; color: #1d2440; }
+        .nav-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 52px;
+            background: #1a1a2e;
+            color: #eee;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            z-index: 1000;
+        }
+        .nav-toggle {
+            background: none;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .nav-toggle span {
+            display: block;
+            width: 24px;
+            height: 2px;
+            background: currentColor;
+        }
+        .nav-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1001;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .nav-overlay.open { opacity: 1; visibility: visible; }
+        .nav-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 260px;
+            max-width: 85vw;
+            height: 100vh;
+            background: #16213e;
+            color: #eee;
+            z-index: 1002;
+            padding: 60px 0 24px 24px;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+        }
+        .nav-drawer.open { transform: translateX(0); }
+        .nav-drawer a {
+            display: block;
+            color: #eee;
+            text-decoration: none;
+            padding: 12px 16px;
+            margin: 4px 0;
+            border-radius: 8px;
+            transition: background 0.15s;
+        }
+        .nav-drawer a:hover { background: rgba(255,255,255,0.1); }
+        .nav-drawer a.active { background: rgba(255,255,255,0.15); font-weight: 600; }
+
+        .page-content {
+            padding: 72px 20px 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { margin: 0 0 14px; font-size: 1.75rem; }
+        .subtitle { margin: 0 0 18px; color: #4d567c; }
+
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .filter-card {
+            background: white;
+            border: 1px solid #d9deef;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 1px 2px rgba(26, 26, 46, 0.06);
+        }
+        .filter-card h2 {
+            margin: 0 0 8px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            color: #3f4c77;
+            letter-spacing: 0.02em;
+        }
+        .filter-dropdown summary {
+            list-style: none;
+            cursor: pointer;
+            user-select: none;
+            font-size: 0.9rem;
+            color: #1d2440;
+            padding: 6px 8px;
+            border: 1px solid #cfd7f1;
+            border-radius: 6px;
+            background: #f8faff;
+        }
+        .filter-dropdown summary::-webkit-details-marker { display: none; }
+        .filter-controls {
+            display: flex;
+            gap: 6px;
+            margin: 8px 0;
+        }
+        .filter-controls button {
+            border: 1px solid #cad4f8;
+            border-radius: 6px;
+            background: #eef2ff;
+            color: #29345f;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        .options {
+            max-height: 230px;
+            overflow: auto;
+            border-top: 1px solid #ebefff;
+            padding-top: 8px;
+        }
+        .option-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 2px 0;
+            font-size: 0.86rem;
+            color: #2d3864;
+        }
+        .meta { margin: 8px 0 10px; color: #3f4c77; font-size: 0.9rem; }
+
+        .table-wrap {
+            background: white;
+            border: 1px solid #d9deef;
+            border-radius: 10px;
+            overflow: auto;
+            max-height: 70vh;
+            box-shadow: 0 1px 2px rgba(26, 26, 46, 0.06);
+        }
+        table { border-collapse: collapse; width: 100%; min-width: 760px; }
+        thead th {
+            position: sticky;
+            top: 0;
+            background: #eaf0ff;
+            z-index: 1;
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid #ced8fd;
+        }
+        tbody td {
+            padding: 9px 10px;
+            border-bottom: 1px solid #edf0fa;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+        .empty {
+            text-align: center;
+            color: #6a7399;
+            padding: 24px;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav-bar">
+        <button class="nav-toggle" id="nav-toggle" aria-label="Open menu">
+            <span></span><span></span><span></span>
+        </button>
+    </nav>
+    <div class="nav-overlay" id="nav-overlay"></div>
+    <div class="nav-drawer" id="nav-drawer">
+        <a href="../index.html">Homepage</a>
+        <a href="../barcode-scanner.html">Barcode scanner test</a>
+        <a href="dropdown-table-test.html" class="active">Dropdown table test</a>
+        <a href="../imagepad_tgbot/">Image pad and collage generator</a>
+    </div>
+
+    <main class="page-content">
+        <h1>Dropdown table test</h1>
+        <p class="subtitle">Cascading multi-select filters for cluster, hospital, asset owner, and location code.</p>
+
+        <section class="filters">
+            <div class="filter-card">
+                <h2>cluster_code</h2>
+                <details class="filter-dropdown" id="cluster-dropdown">
+                    <summary id="cluster-summary">Loading...</summary>
+                    <div class="filter-controls">
+                        <button type="button" data-role="select-all" data-key="cluster_code">Select all</button>
+                        <button type="button" data-role="clear" data-key="cluster_code">Clear</button>
+                    </div>
+                    <div class="options" id="cluster_code-options"></div>
+                </details>
+            </div>
+            <div class="filter-card">
+                <h2>hospital_code</h2>
+                <details class="filter-dropdown" id="hospital-dropdown">
+                    <summary id="hospital-summary">Loading...</summary>
+                    <div class="filter-controls">
+                        <button type="button" data-role="select-all" data-key="hospital_code">Select all</button>
+                        <button type="button" data-role="clear" data-key="hospital_code">Clear</button>
+                    </div>
+                    <div class="options" id="hospital_code-options"></div>
+                </details>
+            </div>
+            <div class="filter-card">
+                <h2>asset_owner</h2>
+                <details class="filter-dropdown" id="asset-dropdown">
+                    <summary id="asset-summary">Loading...</summary>
+                    <div class="filter-controls">
+                        <button type="button" data-role="select-all" data-key="asset_owner">Select all</button>
+                        <button type="button" data-role="clear" data-key="asset_owner">Clear</button>
+                    </div>
+                    <div class="options" id="asset_owner-options"></div>
+                </details>
+            </div>
+            <div class="filter-card">
+                <h2>location_code</h2>
+                <details class="filter-dropdown" id="location-dropdown">
+                    <summary id="location-summary">Loading...</summary>
+                    <div class="filter-controls">
+                        <button type="button" data-role="select-all" data-key="location_code">Select all</button>
+                        <button type="button" data-role="clear" data-key="location_code">Clear</button>
+                    </div>
+                    <div class="options" id="location_code-options"></div>
+                </details>
+            </div>
+        </section>
+
+        <p class="meta" id="result-count">Rows: 0</p>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>cluster_code</th>
+                        <th>hospital_code</th>
+                        <th>asset_owner</th>
+                        <th>location_code</th>
+                    </tr>
+                </thead>
+                <tbody id="results-body"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="./dropdown-table-test-data.js"></script>
+    <script>
+        (function() {
+            var toggle = document.getElementById('nav-toggle');
+            var overlay = document.getElementById('nav-overlay');
+            var drawer = document.getElementById('nav-drawer');
+            function open() { drawer.classList.add('open'); overlay.classList.add('open'); }
+            function close() { drawer.classList.remove('open'); overlay.classList.remove('open'); }
+            toggle.addEventListener('click', open);
+            overlay.addEventListener('click', close);
+        })();
+
+        (function() {
+            var filterOrder = ['cluster_code', 'hospital_code', 'asset_owner', 'location_code'];
+
+            var rawRows = [];
+            var selected = {
+                cluster_code: new Set(),
+                hospital_code: new Set(),
+                asset_owner: new Set(),
+                location_code: new Set()
+            };
+            var options = {
+                cluster_code: [],
+                hospital_code: [],
+                asset_owner: [],
+                location_code: []
+            };
+
+            var summaries = {
+                cluster_code: document.getElementById('cluster-summary'),
+                hospital_code: document.getElementById('hospital-summary'),
+                asset_owner: document.getElementById('asset-summary'),
+                location_code: document.getElementById('location-summary')
+            };
+            var resultsBody = document.getElementById('results-body');
+            var resultCount = document.getElementById('result-count');
+
+            function uniqueSorted(values) {
+                return Array.from(new Set(values)).sort();
+            }
+
+            function matchesSelection(row, key) {
+                var current = selected[key];
+                if (!current || current.size === 0) {
+                    return key === 'asset_owner' || key === 'location_code';
+                }
+                return current.has(row[key]);
+            }
+
+            function calculateRows() {
+                return rawRows.filter(function(row) {
+                    return matchesSelection(row, 'cluster_code') &&
+                        matchesSelection(row, 'hospital_code') &&
+                        matchesSelection(row, 'asset_owner') &&
+                        matchesSelection(row, 'location_code');
+                });
+            }
+
+            function deriveOptionsByContext(key) {
+                if (key === 'cluster_code') {
+                    return uniqueSorted(rawRows.map(function(r) { return r.cluster_code; }));
+                }
+                if (key === 'hospital_code') {
+                    return uniqueSorted(rawRows
+                        .map(function(r) { return r.hospital_code; }));
+                }
+                if (key === 'asset_owner') {
+                    var hospitals = selected.hospital_code;
+                    var chosenLocations = selected.location_code;
+                    return uniqueSorted(rawRows
+                        .filter(function(r) {
+                            if (!hospitals.has(r.hospital_code)) { return false; }
+                            if (chosenLocations.size === 0) { return true; }
+                            return chosenLocations.has(r.location_code);
+                        })
+                        .map(function(r) { return r.asset_owner; }));
+                }
+                if (key === 'location_code') {
+                    var hospitalSet = selected.hospital_code;
+                    var chosenOwners = selected.asset_owner;
+                    return uniqueSorted(rawRows
+                        .filter(function(r) {
+                            if (!hospitalSet.has(r.hospital_code)) { return false; }
+                            if (chosenOwners.size === 0) { return true; }
+                            return chosenOwners.has(r.asset_owner);
+                        })
+                        .map(function(r) { return r.location_code; }));
+                }
+                return [];
+            }
+
+            function toSummaryText(key) {
+                var total = options[key].length;
+                var count = selected[key].size;
+                if (count === 0) { return 'None selected'; }
+                if (count === total) { return 'All selected (' + total + ')'; }
+                return count + ' selected';
+            }
+
+            function renderFilterOptions(key) {
+                var container = document.getElementById(key + '-options');
+                var html = options[key].map(function(value) {
+                    var checked = selected[key].has(value) ? 'checked' : '';
+                    return '<label class="option-row"><input type="checkbox" data-key="' + key + '" value="' + value + '" ' + checked + '> <span>' + value + '</span></label>';
+                }).join('');
+                container.innerHTML = html || '<p class="empty">No options available.</p>';
+                summaries[key].textContent = toSummaryText(key);
+            }
+
+            function syncSelectionToOptions(key, keepIntersection) {
+                var allowed = new Set(options[key]);
+                if (!keepIntersection) {
+                    selected[key] = new Set(options[key]);
+                    return;
+                }
+                selected[key] = new Set(Array.from(selected[key]).filter(function(v) { return allowed.has(v); }));
+            }
+
+            function refreshCascade(fromKey) {
+                if (fromKey === 'cluster_code') {
+                    options.hospital_code = deriveOptionsByContext('hospital_code');
+                    syncSelectionToOptions('hospital_code', true);
+                }
+
+                options.asset_owner = deriveOptionsByContext('asset_owner');
+                syncSelectionToOptions('asset_owner', true);
+
+                options.location_code = deriveOptionsByContext('location_code');
+                syncSelectionToOptions('location_code', true);
+            }
+
+            function renderTable(rows) {
+                if (!rows.length) {
+                    resultsBody.innerHTML = '<tr><td class="empty" colspan="4">No rows match current filters.</td></tr>';
+                    resultCount.textContent = 'Rows: 0';
+                    return;
+                }
+                resultsBody.innerHTML = rows.map(function(row) {
+                    return '<tr>' +
+                        '<td>' + row.cluster_code + '</td>' +
+                        '<td>' + row.hospital_code + '</td>' +
+                        '<td>' + row.asset_owner + '</td>' +
+                        '<td>' + row.location_code + '</td>' +
+                    '</tr>';
+                }).join('');
+                resultCount.textContent = 'Rows: ' + rows.length;
+            }
+
+            function rerenderAll() {
+                filterOrder.forEach(renderFilterOptions);
+                renderTable(calculateRows());
+            }
+
+            function applySelectionFromCheckbox(input) {
+                var key = input.getAttribute('data-key');
+                var value = input.value;
+                if (input.checked) {
+                    selected[key].add(value);
+                } else {
+                    selected[key].delete(value);
+                }
+
+                refreshCascade(key);
+
+                rerenderAll();
+            }
+
+            document.addEventListener('change', function(e) {
+                var target = e.target;
+                if (target && target.matches('input[type="checkbox"][data-key]')) {
+                    applySelectionFromCheckbox(target);
+                }
+            });
+
+            document.addEventListener('click', function(e) {
+                var button = e.target.closest('button[data-role][data-key]');
+                if (!button) { return; }
+                var role = button.getAttribute('data-role');
+                var key = button.getAttribute('data-key');
+                if (role === 'select-all') {
+                    selected[key] = new Set(options[key]);
+                } else if (role === 'clear') {
+                    selected[key] = new Set();
+                }
+                refreshCascade(key);
+                rerenderAll();
+            });
+
+            function initializeFromRows() {
+                options.cluster_code = deriveOptionsByContext('cluster_code');
+                selected.cluster_code = new Set();
+
+                options.hospital_code = deriveOptionsByContext('hospital_code');
+                selected.hospital_code = new Set();
+
+                options.asset_owner = deriveOptionsByContext('asset_owner');
+                selected.asset_owner = new Set();
+
+                options.location_code = deriveOptionsByContext('location_code');
+                selected.location_code = new Set();
+
+                rerenderAll();
+            }
+
+            rawRows = Array.isArray(window.HARDCODED_ROWS) ? window.HARDCODED_ROWS : [];
+            initializeFromRows();
+        })();
+    </script>
+</body>
+</html>
