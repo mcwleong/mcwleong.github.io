@@ -4,7 +4,14 @@
  */
 
 import { loadMultipleImages, processCollage, getGridLayout, normalizeMarginSize } from './imageProcessor.js';
-import { exportImage, downloadImage, generateFilename, generateBatchFilename } from './exportHandler.js';
+import {
+    exportImage,
+    downloadImage,
+    generateFilename,
+    generateBatchFilename,
+    buildZipBlob,
+    generateBatchZipFilename
+} from './exportHandler.js';
 
 export class UIController {
     constructor() {
@@ -163,6 +170,16 @@ export class UIController {
         if (this.elements.previewCanvas) {
             this.elements.previewCanvas.classList.toggle('batch-locked', locked);
         }
+        this.updateDownloadButtonLabel();
+    }
+
+    updateDownloadButtonLabel() {
+        if (!this.elements.downloadBtn) return;
+        const batchReady =
+            this.state.batchMode &&
+            this.state.batchAllImages &&
+            this.state.batchAllImages.length > 0;
+        this.elements.downloadBtn.textContent = batchReady ? 'Download ZIP' : 'Download Image';
     }
 
     async handleBatchFileUpload(files) {
@@ -742,9 +759,14 @@ export class UIController {
         const multiCell = cells > 1;
         const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
 
+        const previousPreviewInfo = this.elements.previewInfo.textContent;
+        this.elements.downloadBtn.disabled = true;
+
         try {
             const s = this.state.scale;
+            const entries = [];
             for (let b = 0; b < nBatches; b++) {
+                this.elements.previewInfo.textContent = `Building ZIP (${b + 1}/${nBatches})...`;
                 const chunk = [];
                 for (let i = 0; i < cells; i++) {
                     chunk[i] = all[b * cells + i];
@@ -762,12 +784,17 @@ export class UIController {
                 );
                 const blob = await exportImage(canvas, fmt, q);
                 const filename = generateBatchFilename(fmt, multiCell, b + 1, nBatches, ts);
-                downloadImage(blob, filename);
-                await new Promise((r) => setTimeout(r, 250));
+                entries.push({ name: filename, blob });
             }
+            this.elements.previewInfo.textContent = 'Building ZIP...';
+            const zipBlob = await buildZipBlob(entries);
+            downloadImage(zipBlob, generateBatchZipFilename(multiCell));
         } catch (error) {
             console.error('Error in batch export:', error);
             alert('Batch export failed. Please try again.');
+        } finally {
+            this.elements.downloadBtn.disabled = false;
+            this.elements.previewInfo.textContent = previousPreviewInfo;
         }
     }
 

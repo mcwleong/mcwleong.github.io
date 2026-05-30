@@ -3,6 +3,8 @@
  * Handles image export and download functionality
  */
 
+import { zipSync } from './vendor/fflate.esm.js';
+
 /**
  * Convert canvas to blob
  * @param {HTMLCanvasElement} canvas - Canvas to export
@@ -68,5 +70,29 @@ export function generateBatchFilename(format, multiCellGrid, batchIndex, batchTo
     const i = String(batchIndex).padStart(2, '0');
     const n = String(batchTotal).padStart(2, '0');
     return `${prefix}-batch${i}-of-${n}-${timestamp}.${format}`;
+}
+
+/**
+ * Build a ZIP blob from named file entries.
+ * @param {{ name: string, blob: Blob }[]} entries
+ * @returns {Promise<Blob>}
+ */
+export async function buildZipBlob(entries) {
+    const files = {};
+    for (const { name, blob } of entries) {
+        files[name] = new Uint8Array(await blob.arrayBuffer());
+    }
+    return new Blob([zipSync(files)], { type: 'application/zip' });
+}
+
+/**
+ * Filename for a batch export ZIP (shared timestamp with members inside).
+ * @param {boolean} multiCellGrid
+ * @returns {string}
+ */
+export function generateBatchZipFilename(multiCellGrid = false) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const prefix = multiCellGrid ? 'collage' : 'image';
+    return `${prefix}-batch-${timestamp}.zip`;
 }
 

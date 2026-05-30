@@ -52,6 +52,7 @@ This exchanges the **image, file reference, fill mode, and crop** for those two 
 
 - **PNG**, **JPEG**, **WebP** with quality slider for lossy formats  
 - Filenames: `image-<timestamp>.*` for **1×1**, `collage-<timestamp>.*` for multi-cell grids  
+- **Batch processing:** all collages export as one ZIP file (`image-batch-<timestamp>.zip` or `collage-batch-<timestamp>.zip`); each member inside keeps the usual `*-batch01-of-N-*` name  
 
 ### Empty cells
 
