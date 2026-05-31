@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to clipboard</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; background: #f5f6fa; }
+        .nav-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 52px;
+            background: #1a1a2e;
+            color: #eee;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            z-index: 1000;
+        }
+        .nav-toggle {
+            background: none;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .nav-toggle span {
+            display: block;
+            width: 24px;
+            height: 2px;
+            background: currentColor;
+        }
+        .nav-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1001;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .nav-overlay.open { opacity: 1; visibility: visible; }
+        .nav-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 260px;
+            max-width: 85vw;
+            height: 100vh;
+            background: #16213e;
+            color: #eee;
+            z-index: 1002;
+            padding: 60px 0 24px 24px;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+        }
+        .nav-drawer.open { transform: translateX(0); }
+        .nav-drawer a {
+            display: block;
+            color: #eee;
+            text-decoration: none;
+            padding: 12px 16px;
+            margin: 4px 0;
+            border-radius: 8px;
+            transition: background 0.15s;
+        }
+        .nav-drawer a:hover { background: rgba(255,255,255,0.1); }
+        .nav-drawer a.active { background: rgba(255,255,255,0.15); font-weight: 600; }
+        .page-content {
+            padding: 72px 24px 24px;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+        .page-content h1 { font-size: 1.75rem; color: #1a1a2e; margin-bottom: 0.5rem; }
+        .page-content p { color: #444; line-height: 1.6; }
+        .upload-zone {
+            margin-top: 1.5rem;
+            border: 2px dashed #b8c0cc;
+            border-radius: 12px;
+            background: #fff;
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .upload-zone:hover,
+        .upload-zone.dragover {
+            border-color: #1a1a2e;
+            background: #f0f2f8;
+        }
+        .upload-zone input { display: none; }
+        .upload-trigger {
+            display: block;
+            cursor: pointer;
+        }
+        .upload-title {
+            display: block;
+            font-size: 1.05rem;
+            color: #1a1a2e;
+            font-weight: 600;
+        }
+        .upload-hint {
+            display: block;
+            margin-top: 0.5rem;
+            color: #666;
+            font-size: 0.95rem;
+        }
+        .status {
+            margin-top: 1.25rem;
+            padding: 0.85rem 1rem;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            display: none;
+        }
+        .status.show { display: block; }
+        .status.success { background: #e6f7ed; color: #1e6b3a; border: 1px solid #b7e4c7; }
+        .status.error { background: #fdecea; color: #9b2c2c; border: 1px solid #f5c6cb; }
+        .status.pending { background: #eef2ff; color: #334155; border: 1px solid #c7d2fe; }
+        .preview {
+            margin-top: 1.5rem;
+            display: none;
+        }
+        .preview.show { display: block; }
+        .preview img {
+            max-width: 100%;
+            max-height: 420px;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        .preview figcaption {
+            margin-top: 0.5rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav-bar">
+        <button class="nav-toggle" id="nav-toggle" aria-label="Open menu">
+            <span></span><span></span><span></span>
+        </button>
+    </nav>
+    <div class="nav-overlay" id="nav-overlay"></div>
+    <div class="nav-drawer" id="nav-drawer">
+        <a href="index.html">Homepage</a>
+        <a href="barcode-scanner.html">Barcode scanner test</a>
+        <a href="test_filter_ui/dropdown-table-test.html">Dropdown table test</a>
+        <a href="imagepad_tgbot/">Image pad and collage generator</a>
+        <a href="image-clipboard.html" class="active">Image to clipboard</a>
+    </div>
+
+    <main class="page-content">
+        <h1>Image to clipboard</h1>
+        <p>Upload a JPG or PNG photo and it is copied to your clipboard automatically.</p>
+
+        <div class="upload-zone" id="upload-zone">
+            <input type="file" id="file-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+            <label for="file-input" class="upload-trigger">
+                <span class="upload-title">Choose a photo or drop it here</span>
+                <span class="upload-hint">JPG and PNG only</span>
+            </label>
+        </div>
+
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+
+        <figure class="preview" id="preview">
+            <img id="preview-img" alt="Uploaded preview">
+            <figcaption id="preview-caption"></figcaption>
+        </figure>
+    </main>
+
+    <script>
+        (function() {
+            var toggle = document.getElementById('nav-toggle');
+            var overlay = document.getElementById('nav-overlay');
+            var drawer = document.getElementById('nav-drawer');
+            function openNav() { drawer.classList.add('open'); overlay.classList.add('open'); }
+            function closeNav() { drawer.classList.remove('open'); overlay.classList.remove('open'); }
+            toggle.addEventListener('click', openNav);
+            overlay.addEventListener('click', closeNav);
+        })();
+
+        (function() {
+            var ALLOWED_TYPES = { 'image/jpeg': true, 'image/png': true };
+            var ALLOWED_EXT = { jpg: true, jpeg: true, png: true };
+
+            var uploadZone = document.getElementById('upload-zone');
+            var fileInput = document.getElementById('file-input');
+            var statusEl = document.getElementById('status');
+            var previewEl = document.getElementById('preview');
+            var previewImg = document.getElementById('preview-img');
+            var previewCaption = document.getElementById('preview-caption');
+            var previewUrl = null;
+
+            function setStatus(kind, message) {
+                statusEl.className = 'status show ' + kind;
+                statusEl.textContent = message;
+            }
+
+            function clearPreview() {
+                if (previewUrl) {
+                    URL.revokeObjectURL(previewUrl);
+                    previewUrl = null;
+                }
+                previewEl.classList.remove('show');
+                previewImg.removeAttribute('src');
+                previewCaption.textContent = '';
+            }
+
+            function isAllowedFile(file) {
+                if (ALLOWED_TYPES[file.type]) return true;
+                var parts = file.name.split('.');
+                var ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+                return ALLOWED_EXT[ext];
+            }
+
+            function blobToPng(blob) {
+                return new Promise(function(resolve, reject) {
+                    var img = new Image();
+                    var url = URL.createObjectURL(blob);
+                    img.onload = function() {
+                        var canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        canvas.getContext('2d').drawImage(img, 0, 0);
+                        URL.revokeObjectURL(url);
+                        canvas.toBlob(function(pngBlob) {
+                            if (pngBlob) resolve(pngBlob);
+                            else reject(new Error('Could not convert image to PNG.'));
+                        }, 'image/png');
+                    };
+                    img.onerror = function() {
+                        URL.revokeObjectURL(url);
+                        reject(new Error('Could not read the image.'));
+                    };
+                    img.src = url;
+                });
+            }
+
+            async function copyImageBlob(blob) {
+                if (!navigator.clipboard || !window.ClipboardItem) {
+                    throw new Error('Clipboard access is not supported in this browser.');
+                }
+
+                var mime = blob.type === 'image/jpeg' || blob.type === 'image/png' ? blob.type : 'image/png';
+                try {
+                    await navigator.clipboard.write([
+                        new ClipboardItem((function() {
+                            var item = {};
+                            item[mime] = blob;
+                            return item;
+                        })())
+                    ]);
+                } catch (err) {
+                    var pngBlob = mime === 'image/png' ? blob : await blobToPng(blob);
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': pngBlob })
+                    ]);
+                }
+            }
+
+            async function handleFile(file) {
+                clearPreview();
+
+                if (!file) return;
+
+                if (!isAllowedFile(file)) {
+                    setStatus('error', 'Only JPG and PNG files are supported.');
+                    return;
+                }
+
+                setStatus('pending', 'Copying image to clipboard…');
+
+                try {
+                    await copyImageBlob(file);
+
+                    previewUrl = URL.createObjectURL(file);
+                    previewImg.src = previewUrl;
+                    previewCaption.textContent = file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
+                    previewEl.classList.add('show');
+
+                    setStatus('success', 'Image copied to clipboard. Paste with Ctrl+V (or Cmd+V on Mac).');
+                } catch (err) {
+                    console.error(err);
+                    setStatus('error', err.message || 'Failed to copy image to clipboard.');
+                }
+            }
+
+            fileInput.addEventListener('change', function() {
+                handleFile(fileInput.files && fileInput.files[0]);
+                fileInput.value = '';
+            });
+
+            uploadZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+
+            uploadZone.addEventListener('dragleave', function() {
+                uploadZone.classList.remove('dragover');
+            });
+
+            uploadZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                handleFile(file);
+            });
+        })();
+    </script>
+</body>
+</html>
