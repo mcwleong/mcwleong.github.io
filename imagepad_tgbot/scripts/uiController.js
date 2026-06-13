@@ -381,21 +381,8 @@ export class UIController {
             button.className = 'grid-button';
             button.dataset.rows = rows;
             button.dataset.cols = cols;
+            button.textContent = `${rows}×${cols}`;
             button.title = `${rows}×${cols}`;
-
-            // Create visual grid preview
-            const preview = document.createElement('div');
-            preview.className = 'grid-preview';
-            preview.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-            preview.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-
-            for (let i = 0; i < rows * cols; i++) {
-                const cell = document.createElement('div');
-                cell.className = 'grid-cell-preview';
-                preview.appendChild(cell);
-            }
-
-            button.appendChild(preview);
             button.addEventListener('click', () => this.handleGridSelection(rows, cols));
             this.elements.gridSelector.appendChild(button);
         });
