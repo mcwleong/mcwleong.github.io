@@ -3,14 +3,16 @@
  * Handles all UI interactions and updates
  */
 
-import { loadMultipleImages, processCollage, getGridLayout, normalizeMarginSize } from './imageProcessor.js';
+import { loadMultipleImages, processCollage, getGridLayout, normalizeMarginSize, processSplitMaster, cropStrip, drawSplitGuides } from './imageProcessor.js';
 import {
     exportImage,
     downloadImage,
     generateFilename,
     generateBatchFilename,
     buildZipBlob,
-    generateBatchZipFilename
+    generateBatchZipFilename,
+    generateSplitZipFilename,
+    generateSplitMemberFilename
 } from './exportHandler.js';
 
 export class UIController {
@@ -40,7 +42,10 @@ export class UIController {
             batchMode: false,
             batchAllImages: null,
             batchFiles: null,
-            batchConfirmStamp: null
+            batchConfirmStamp: null,
+            appMode: 'collage',
+            splitZ: 2,
+            splitFillMode: 'horizontal'
         };
 
         this.elements = {};
@@ -57,6 +62,117 @@ export class UIController {
             const v = parseInt(this.elements.outputScale.value, 10);
             this.state.scale = Number.isFinite(v) && v >= 1 && v <= 8 ? v : 2;
         }
+        this.updateModeUI();
+    }
+
+    isSplitMode() {
+        return this.state.appMode === 'split';
+    }
+
+    hasSplitImage() {
+        return this.isSplitMode() && Boolean(this.state.inputImages[0]);
+    }
+
+    getSplitFrameDims() {
+        const s = this.state.scale;
+        return {
+            frameW: this.state.outputWidth * s,
+            frameH: this.state.outputHeight * s,
+            marginPx: normalizeMarginSize(this.state.marginSize * s)
+        };
+    }
+
+    getSplitGuideColor() {
+        const value = getComputedStyle(document.documentElement).getPropertyValue('--split-guide-color').trim();
+        return value || 'rgba(220, 50, 50, 0.75)';
+    }
+
+    setAppMode(mode) {
+        if (mode !== 'collage' && mode !== 'split') return;
+        if (this.state.appMode === mode) return;
+
+        this.exitSwapMode();
+        this.state.batchMode = false;
+        if (this.elements.batchMode) {
+            this.elements.batchMode.checked = false;
+        }
+        if (this.elements.batchHint) {
+            this.elements.batchHint.hidden = true;
+        }
+        this.clearBatchWork();
+
+        this.state.appMode = mode;
+        if (mode === 'split') {
+            this.state.splitZ = 2;
+            this.state.splitFillMode = 'horizontal';
+        }
+
+        this.state.inputImages = [];
+        this.state.files = [];
+        this.initializeCropAreas();
+        this.showPlaceholder();
+        this.updateModeUI();
+        this.updateImageInfo();
+        this.updateImageCounter();
+        this.updateBatchInteractionLock();
+    }
+
+    updateModeUI() {
+        document.body.dataset.appMode = this.state.appMode;
+
+        if (this.elements.modeCollage) {
+            this.elements.modeCollage.checked = this.state.appMode === 'collage';
+        }
+        if (this.elements.modeSplit) {
+            this.elements.modeSplit.checked = this.state.appMode === 'split';
+        }
+
+        if (this.elements.fileInput) {
+            if (this.state.appMode === 'split') {
+                this.elements.fileInput.removeAttribute('multiple');
+            } else {
+                this.elements.fileInput.setAttribute('multiple', '');
+            }
+        }
+
+        this.updateSplitButtons();
+        this.updateUploadHintText();
+        this.updateDownloadButtonLabel();
+    }
+
+    updateSplitButtons() {
+        if (this.elements.splitZBtns) {
+            this.elements.splitZBtns.querySelectorAll('.split-z-btn').forEach((btn) => {
+                btn.classList.toggle('active', parseInt(btn.dataset.z, 10) === this.state.splitZ);
+            });
+        }
+        if (this.elements.splitFillBtns) {
+            this.elements.splitFillBtns.querySelectorAll('.split-fill-btn').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.fill === this.state.splitFillMode);
+            });
+        }
+    }
+
+    handleSplitZChange(z) {
+        if (z !== 2 && z !== 3) return;
+        if (this.state.splitZ === z) return;
+        this.state.splitZ = z;
+        this.updateSplitButtons();
+        this.updateUploadHintText();
+        this.updateImageCounter();
+        this.updatePreview();
+    }
+
+    handleSplitFillChange(fillMode) {
+        if (fillMode !== 'horizontal' && fillMode !== 'vertical') return;
+        if (this.state.splitFillMode === fillMode) return;
+        this.state.splitFillMode = fillMode;
+        this.updateSplitButtons();
+        this.updatePreview();
+    }
+
+    splitFillLabel() {
+        return this.state.splitFillMode === 'horizontal' ? 'Fill horizontal' : 'Fill vertical';
     }
 
     invalidateBatchConfirm() {
@@ -140,6 +256,11 @@ export class UIController {
 
     updateUploadHintText() {
         if (!this.elements.uploadHint) return;
+        if (this.isSplitMode()) {
+            this.elements.uploadHint.textContent =
+                `Upload one image — output is split into ${this.state.splitZ} strips in a ZIP`;
+            return;
+        }
         if (this.state.batchMode) {
             this.elements.uploadHint.textContent =
                 'Choose images after confirming settings. Each full grid of cells becomes one file.';
@@ -176,10 +297,13 @@ export class UIController {
     updateDownloadButtonLabel() {
         if (!this.elements.downloadBtn) return;
         const batchReady =
+            !this.isSplitMode() &&
             this.state.batchMode &&
             this.state.batchAllImages &&
             this.state.batchAllImages.length > 0;
-        this.elements.downloadBtn.textContent = batchReady ? 'Download ZIP' : 'Download Image';
+        const splitReady = this.hasSplitImage();
+        this.elements.downloadBtn.textContent =
+            batchReady || splitReady ? 'Download ZIP' : 'Download Image';
     }
 
     async handleBatchFileUpload(files) {
@@ -272,6 +396,11 @@ export class UIController {
         this.elements.previewContainer = document.getElementById('preview-container');
         this.elements.gridSelector = document.getElementById('grid-selector');
         this.elements.collapseControlsBtn = document.getElementById('collapse-controls-btn');
+
+        this.elements.modeCollage = document.getElementById('mode-collage');
+        this.elements.modeSplit = document.getElementById('mode-split');
+        this.elements.splitZBtns = document.getElementById('split-z-btns');
+        this.elements.splitFillBtns = document.getElementById('split-fill-btns');
     }
 
     setupEventListeners() {
@@ -320,6 +449,27 @@ export class UIController {
 
         this.elements.batchMode.addEventListener('change', (e) => this.handleBatchModeChange(e));
         this.elements.downloadBtn.addEventListener('click', () => this.handleDownload());
+
+        if (this.elements.modeCollage) {
+            this.elements.modeCollage.addEventListener('change', () => {
+                if (this.elements.modeCollage.checked) this.setAppMode('collage');
+            });
+        }
+        if (this.elements.modeSplit) {
+            this.elements.modeSplit.addEventListener('change', () => {
+                if (this.elements.modeSplit.checked) this.setAppMode('split');
+            });
+        }
+        if (this.elements.splitZBtns) {
+            this.elements.splitZBtns.querySelectorAll('.split-z-btn').forEach((btn) => {
+                btn.addEventListener('click', () => this.handleSplitZChange(parseInt(btn.dataset.z, 10)));
+            });
+        }
+        if (this.elements.splitFillBtns) {
+            this.elements.splitFillBtns.querySelectorAll('.split-fill-btn').forEach((btn) => {
+                btn.addEventListener('click', () => this.handleSplitFillChange(btn.dataset.fill));
+            });
+        }
 
         // Debounce for input changes
         let debounceTimer;
@@ -395,6 +545,23 @@ export class UIController {
         if (!files || files.length === 0) return;
 
         try {
+            if (this.isSplitMode()) {
+                if (files.length > 1) {
+                    alert('Split mode uses one image only. The first file was loaded.');
+                }
+                const loaded = await loadMultipleImages([files[0]]);
+                this.state.batchAllImages = null;
+                this.state.batchFiles = null;
+                this.state.inputImages = [loaded[0]];
+                this.state.files = [files[0]];
+                this.initializeCropAreas();
+                this.updateImageInfo();
+                this.updateImageCounter();
+                this.updateBatchInteractionLock();
+                this.updatePreview();
+                return;
+            }
+
             if (this.state.batchMode) {
                 if (!this.ensureBatchSettingsConfirmed()) return;
                 await this.handleBatchFileUpload(files);
@@ -601,6 +768,9 @@ export class UIController {
     }
 
     countLoadedImages() {
+        if (this.isSplitMode()) {
+            return this.state.inputImages[0] ? 1 : 0;
+        }
         const cellCount = this.state.gridRows * this.state.gridCols;
         let n = 0;
         for (let i = 0; i < cellCount; i++) {
@@ -610,6 +780,17 @@ export class UIController {
     }
 
     updateImageInfo() {
+        if (this.isSplitMode()) {
+            if (!this.state.inputImages[0]) {
+                this.elements.imageInfo.textContent = '';
+                return;
+            }
+            const img = this.state.inputImages[0];
+            this.elements.imageInfo.textContent =
+                `Image: ${this.state.files[0]?.name || 'Unknown'}\n` +
+                `Dimensions: ${img.width} × ${img.height}px`;
+            return;
+        }
         if (this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0) {
             const cells = this.state.gridRows * this.state.gridCols;
             const total = this.state.batchAllImages.length;
@@ -634,6 +815,12 @@ export class UIController {
     }
 
     updateImageCounter() {
+        if (this.isSplitMode()) {
+            this.elements.imageCounter.textContent = this.state.inputImages[0]
+                ? `Split export: ${this.state.splitZ} strips`
+                : '';
+            return;
+        }
         const maxImages = this.state.gridRows * this.state.gridCols;
         if (this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0) {
             const total = this.state.batchAllImages.length;
@@ -650,6 +837,23 @@ export class UIController {
     updatePreview() {
         if (this.countLoadedImages() === 0) {
             this.showPlaceholder();
+            return;
+        }
+
+        if (this.isSplitMode()) {
+            const image = this.state.inputImages[0];
+            const { frameW, frameH, marginPx } = this.getSplitFrameDims();
+            const z = this.state.splitZ;
+            const canvas = processSplitMaster(
+                image,
+                z,
+                frameW,
+                frameH,
+                marginPx,
+                this.state.marginColor,
+                this.state.splitFillMode
+            );
+            this.displaySplitCanvas(canvas, z, frameW, frameH);
             return;
         }
 
@@ -692,6 +896,29 @@ export class UIController {
             `(Preview scale: ${(scale * 100).toFixed(0)}%)`;
     }
 
+    displaySplitCanvas(canvas, z, frameW, frameH) {
+        this.state.canvas = canvas;
+        this.elements.previewCanvas.width = canvas.width;
+        this.elements.previewCanvas.height = canvas.height;
+
+        const ctx = this.elements.previewCanvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(canvas, 0, 0);
+        drawSplitGuides(ctx, z, frameW, frameH, this.getSplitGuideColor());
+
+        this.elements.previewCanvas.classList.add('visible');
+        this.elements.previewPlaceholder.classList.add('hidden');
+
+        const scale = Math.min(
+            (this.elements.previewCanvas.parentElement.clientWidth - 40) / canvas.width,
+            (this.elements.previewCanvas.parentElement.clientHeight - 40) / canvas.height
+        );
+        this.state.previewScale = scale;
+        this.elements.previewInfo.textContent =
+            `Split: ${canvas.width} × ${canvas.height}px · ${z} strips · ${this.splitFillLabel()} ` +
+            `(Preview scale: ${(scale * 100).toFixed(0)}%)`;
+    }
+
     showPlaceholder() {
         this.elements.previewCanvas.classList.remove('visible');
         this.elements.previewPlaceholder.classList.remove('hidden');
@@ -705,6 +932,10 @@ export class UIController {
     }
 
     async handleDownload() {
+        if (this.isSplitMode()) {
+            await this.handleSplitDownload();
+            return;
+        }
         if (this.state.batchMode && this.state.batchAllImages && this.state.batchAllImages.length > 0) {
             await this.handleBatchDownload();
             return;
@@ -728,6 +959,53 @@ export class UIController {
         } catch (error) {
             console.error('Error exporting image:', error);
             alert('Failed to export image. Please try again.');
+        }
+    }
+
+    async handleSplitDownload() {
+        if (!this.hasSplitImage()) {
+            alert('Please upload an image first.');
+            return;
+        }
+
+        const image = this.state.inputImages[0];
+        const { frameW, frameH, marginPx } = this.getSplitFrameDims();
+        const z = this.state.splitZ;
+        const fmt = this.state.currentFormat;
+        const q = this.state.quality / 100;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const previousPreviewInfo = this.elements.previewInfo.textContent;
+        this.elements.downloadBtn.disabled = true;
+
+        try {
+            const master = processSplitMaster(
+                image,
+                z,
+                frameW,
+                frameH,
+                marginPx,
+                this.state.marginColor,
+                this.state.splitFillMode
+            );
+            const entries = [];
+            for (let i = 0; i < z; i++) {
+                this.elements.previewInfo.textContent = `Building ZIP (${i + 1}/${z})...`;
+                const stripCanvas = cropStrip(master, i, frameW, frameH);
+                const blob = await exportImage(stripCanvas, fmt, q);
+                entries.push({
+                    name: generateSplitMemberFilename(fmt, i + 1, z, ts),
+                    blob
+                });
+            }
+            this.elements.previewInfo.textContent = 'Building ZIP...';
+            const zipBlob = await buildZipBlob(entries);
+            downloadImage(zipBlob, generateSplitZipFilename(z));
+        } catch (error) {
+            console.error('Error in split export:', error);
+            alert('Split export failed. Please try again.');
+        } finally {
+            this.elements.downloadBtn.disabled = false;
+            this.elements.previewInfo.textContent = previousPreviewInfo;
         }
     }
 
@@ -885,6 +1163,7 @@ export class UIController {
 
     // Mouse event handlers for crop area dragging
     handleCanvasMouseDown(e) {
+        if (this.isSplitMode()) return;
         if (this.countLoadedImages() === 0) return;
         if (this.isBatchPreviewLocked()) return;
 
@@ -909,6 +1188,7 @@ export class UIController {
     }
 
     handleCanvasMouseMove(e) {
+        if (this.isSplitMode()) return;
         if (!this.state.isDragging || this.state.dragCellIndex === null) {
             if (this.countLoadedImages() > 0) {
                 const { x, y } = this.getCanvasLogicalCoords(e.clientX, e.clientY);
@@ -940,6 +1220,7 @@ export class UIController {
     }
 
     handleCanvasTouchStart(e) {
+        if (this.isSplitMode()) return;
         if (this.countLoadedImages() === 0) return;
         if (this.isBatchPreviewLocked()) return;
         if (e.touches.length !== 1) return;

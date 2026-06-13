@@ -316,3 +316,84 @@ export function processCollage(images, gridRows, gridCols, outputWidth, outputHe
     return canvas;
 }
 
+/**
+ * Render one image on a wide master canvas for horizontal split export.
+ * @param {HTMLImageElement} image - Source image
+ * @param {number} z - Number of vertical strips (2 or 3)
+ * @param {number} frameW - Width of each exported strip
+ * @param {number} frameH - Height of each exported strip
+ * @param {number} marginSize - Margin size (already scaled)
+ * @param {string} marginColor - Margin / letterbox color
+ * @param {string} fillMode - 'horizontal' or 'vertical'
+ * @returns {HTMLCanvasElement}
+ */
+export function processSplitMaster(image, z, frameW, frameH, marginSize, marginColor, fillMode) {
+    const masterW = z * frameW;
+    const masterH = frameH;
+    const canvas = document.createElement('canvas');
+    canvas.width = masterW;
+    canvas.height = masterH;
+    const ctx = canvas.getContext('2d');
+
+    const m = normalizeMarginSize(marginSize);
+    ctx.fillStyle = marginColor;
+    ctx.fillRect(0, 0, masterW, masterH);
+
+    const layout = getGridLayout(masterW, masterH, 1, 1, m);
+    drawImageInCell(
+        ctx,
+        image,
+        layout.cellXs[0],
+        layout.cellYs[0],
+        layout.cellWidths[0],
+        layout.cellHeights[0],
+        fillMode
+    );
+
+    return canvas;
+}
+
+/**
+ * Crop one vertical strip from a split master canvas.
+ * @param {HTMLCanvasElement} masterCanvas
+ * @param {number} index - Strip index (0-based)
+ * @param {number} frameW
+ * @param {number} frameH
+ * @returns {HTMLCanvasElement}
+ */
+export function cropStrip(masterCanvas, index, frameW, frameH) {
+    const canvas = document.createElement('canvas');
+    canvas.width = frameW;
+    canvas.height = frameH;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(
+        masterCanvas,
+        index * frameW, 0, frameW, frameH,
+        0, 0, frameW, frameH
+    );
+    return canvas;
+}
+
+/**
+ * Draw vertical dashed slice guides on a canvas context.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} z - Strip count
+ * @param {number} frameW - Strip width
+ * @param {number} frameH - Canvas height
+ * @param {string} [strokeColor] - Line color (theme-aware from caller)
+ */
+export function drawSplitGuides(ctx, z, frameW, frameH, strokeColor = 'rgba(220, 50, 50, 0.75)') {
+    ctx.save();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 8]);
+    for (let i = 1; i < z; i++) {
+        const x = i * frameW + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, frameH);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+

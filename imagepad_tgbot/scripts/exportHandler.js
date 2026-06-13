@@ -96,3 +96,27 @@ export function generateBatchZipFilename(multiCellGrid = false) {
     return `${prefix}-batch-${timestamp}.zip`;
 }
 
+/**
+ * Filename for a horizontal-split ZIP export.
+ * @param {number} z - Strip count (2 or 3)
+ * @returns {string}
+ */
+export function generateSplitZipFilename(z) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    return `split-z${z}-${timestamp}.zip`;
+}
+
+/**
+ * Filename for one strip inside a split ZIP.
+ * @param {string} format - Export format
+ * @param {number} index - 1-based strip index
+ * @param {number} z - Total strips
+ * @param {string} timestamp - Shared timestamp for the run
+ * @returns {string}
+ */
+export function generateSplitMemberFilename(format, index, z, timestamp) {
+    const i = String(index).padStart(2, '0');
+    const n = String(z).padStart(2, '0');
+    return `split-${i}-of-${n}-${timestamp}.${format}`;
+}
+

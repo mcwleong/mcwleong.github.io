@@ -41,6 +41,7 @@
     --focus-ring: 0 0 0 3px rgba(102, 126, 234, 0.1);
     --focus-ring-strong: 0 0 0 3px rgba(102, 126, 234, 0.35);
     --header-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --split-guide-color: rgba(220, 50, 50, 0.75);
 }
 
 [data-theme="dark"] {
@@ -80,6 +81,7 @@
     --focus-ring: 0 0 0 3px rgba(123, 142, 240, 0.2);
     --focus-ring-strong: 0 0 0 3px rgba(123, 142, 240, 0.35);
     --header-gradient: linear-gradient(135deg, #4a5ab8 0%, #5a3d7a 100%);
+    --split-guide-color: rgba(255, 100, 100, 0.85);
 }
 
 body {
@@ -248,6 +250,47 @@ body.controls-collapsed .collapse-controls-icon {
 .radio-label:has(input[type="radio"]:checked) {
     border-color: var(--color-accent);
     background-color: var(--color-surface-accent-strong);
+}
+
+/* Workflow mode visibility */
+body[data-app-mode="collage"] .split-only {
+    display: none !important;
+}
+
+body[data-app-mode="split"] .collage-only {
+    display: none !important;
+}
+
+.split-option-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.split-option-btns .split-z-btn {
+    flex: 1;
+}
+
+.split-option-btns .split-z-btn.active {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: #fff;
+}
+
+.split-fill-btns {
+    display: flex;
+    gap: 8px;
+    max-width: 120px;
+}
+
+.split-fill-btns .split-fill-btn {
+    flex: 1;
+}
+
+.split-hint {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    line-height: 1.45;
 }
 
 /* Upload Area */

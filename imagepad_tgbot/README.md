@@ -4,7 +4,28 @@ A client-side web app for padding images to exact output sizes and building phot
 
 ## Features
 
-### Unified grid workflow (no separate “single” mode)
+### Workflow modes
+
+Use the **Workflow** toggle in the sidebar:
+
+- **Collage** (default) — grid layouts and multi-image collages (see below).
+- **Split** — one image rendered on a wide canvas, then exported as **2 or 3 equal vertical strips** in a ZIP (for album-style posting).
+
+### Horizontal split mode
+
+1. Switch workflow to **Split**.
+2. Upload **one image** (extra files are ignored with an alert).
+3. Choose **2 strips** or **3 strips**.
+4. Choose **H** (fill horizontal) or **V** (fill vertical) for how the image fills the inner area.
+5. Set **output size**, **scale**, **margins**, and export format (shared with collage mode).
+6. Preview shows the full wide canvas with **dotted vertical lines** at slice boundaries.
+7. **Download ZIP** — contains `split-01-of-02-…`, `split-02-of-02-…`, etc.
+
+**Canvas math:** master size is `(z × outputWidth × scale) × (outputHeight × scale)`. Each strip is `outputWidth × scale` by `outputHeight × scale`. Margins apply as an outer border on the full master (same as a 1×1 collage on the wide canvas).
+
+Example: output 1080×1350, scale 1, z=2 → master 2160×1350; strips are the left and right 1080×1350 halves.
+
+### Unified grid workflow (collage mode)
 
 There is one workflow: pick a **grid layout**. A **1×1** grid is the default and matches the old single-image case—one cell inside the outer margins, with the same padding and export behavior. Use a larger grid for collages.
 
@@ -52,7 +73,8 @@ This exchanges the **image, file reference, fill mode, and crop** for those two 
 
 - **PNG**, **JPEG**, **WebP** with quality slider for lossy formats  
 - Filenames: `image-<timestamp>.*` for **1×1**, `collage-<timestamp>.*` for multi-cell grids  
-- **Batch processing:** all collages export as one ZIP file (`image-batch-<timestamp>.zip` or `collage-batch-<timestamp>.zip`); each member inside keeps the usual `*-batch01-of-N-*` name  
+- **Split mode:** `split-z2-<timestamp>.zip` (or `z3`) with `split-01-of-02-…` members inside  
+- **Batch processing** (collage only): all collages export as one ZIP file (`image-batch-<timestamp>.zip` or `collage-batch-<timestamp>.zip`); each member inside keeps the usual `*-batch01-of-N-*` name  
 
 ### Empty cells
 
@@ -87,11 +109,9 @@ Right-click `index.html` → **Open with Live Server**.
 ### Usage checklist
 
 1. Start a local server and open the app URL  
-2. Optionally change the grid (default **1×1** for one padded image)  
-3. Upload one or more images  
-4. Set each cell’s **Fit / Fill vertical / Fill horizontal** as needed  
-5. Drag on the preview to reframe; use **Swap photos** + two taps on mobile, or **Alt+click** twice on desktop, to swap cells  
-6. Set output size, margins, format, then **Download Image**  
+2. Choose **Collage** or **Split** workflow  
+3. **Collage:** optionally change the grid (default **1×1**), upload images, set fill modes, reframe/swap as needed, then **Download Image** (or batch ZIP)  
+4. **Split:** upload one image, pick strip count and H/V fill, set output/margins/format, then **Download ZIP**  
 
 ## Browser compatibility
 
@@ -118,7 +138,8 @@ imagepad_tgbot/
 ## Technical notes
 
 - **Vanilla ES modules** — no npm dependencies for the app  
-- **`processCollage`** drives all previews and exports (including 1×1); legacy `processImage` remains in `imageProcessor.js` but is not used by the UI  
+- **`processCollage`** drives collage previews and exports (including 1×1); **`processSplitMaster`** / **`cropStrip`** drive split mode  
+- Legacy `processImage` remains in `imageProcessor.js` but is not used by the UI  
 - **Privacy**: images stay on your machine; the dev server only serves static files  
 
 ## License
